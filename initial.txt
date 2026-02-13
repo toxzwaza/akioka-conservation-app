@@ -1,0 +1,228 @@
+【Cursor 指示文｜完全統合版】
+設備保全システム：作業（Work）登録基盤を新規構築（Laravel9 + MySQL）
+※ migration / model / route まで作成
+※ すべてのカラムに comment() を付与
+※ Enumは使わずDBマスタ参照方式
+
+==================================================
+0) 前提
+==================================================
+- Laravel 9
+- DB: MySQL
+- usersテーブルは既存
+- equipments は parent_id ツリー構造
+- 担当者は assigned_user_id / additional_user_id
+- 停止時間は production_stop_minutes（分）
+- 操作履歴は work_activities に統合
+- 添付は PDF中心（work_attachments）
+- ステータス等は DBマスタ参照
+
+==================================================
+1) Migration 作成
+==================================================
+
+--------------------------------------------
+equipments
+--------------------------------------------
+Schema::create('equipments', function (Blueprint $table) {
+    $table->id()->comment('設備ID');
+    $table->foreignId('parent_id')->nullable()
+        ->constrained('equipments')->nullOnDelete()
+        ->comment('親設備ID');
+
+    $table->string('name')->comment('設備名');
+    $table->string('model_number')->nullable()->comment('型式');
+    $table->string('status')->comment('設備状態');
+    $table->date('installed_at')->nullable()->comment('設置日');
+    $table->string('vendor_contact')->nullable()->comment('対応業者');
+    $table->string('manufacturer')->nullable()->comment('製造業者');
+    $table->text('note')->nullable()->comment('備考');
+
+    $table->timestamps();
+    $table->comment('設備マスタ');
+});
+
+--------------------------------------------
+parts
+--------------------------------------------
+Schema::create('parts', function (Blueprint $table) {
+    $table->id()->comment('部品ID');
+    $table->string('part_no')->unique()->comment('部品番号');
+    $table->string('name')->comment('部品名称');
+    $table->string('manufacturer')->nullable()->comment('メーカー');
+    $table->string('model_number')->nullable()->comment('型式');
+    $table->string('storage_location')->nullable()->comment('保管場所');
+    $table->timestamps();
+    $table->comment('部品マスタ');
+});
+
+--------------------------------------------
+equipment_parts
+--------------------------------------------
+Schema::create('equipment_parts', function (Blueprint $table) {
+    $table->id()->comment('設備部品紐付けID');
+    $table->foreignId('equipment_id')->constrained()->cascadeOnDelete()->comment('設備ID');
+    $table->foreignId('part_id')->constrained()->cascadeOnDelete()->comment('部品ID');
+    $table->text('note')->nullable()->comment('メモ');
+    $table->timestamps();
+
+    $table->unique(['equipment_id','part_id']);
+    $table->comment('設備と部品の対応');
+});
+
+==================================================
+2) マスタ系テーブル（共通構造）
+==================================================
+※以下すべて同じ構造
+
+- id（PK）
+- code（内部コード）
+- name（表示名）
+- sort_order（並び順）
+- is_active（有効）
+- timestamps
+
+対象テーブル：
+- work_statuses（作業ステータス）
+- work_priorities（優先度）
+- work_purposes（作業目的）
+- work_content_tags（作業タグ）
+- repair_types（修理内容）
+- attachment_types（添付種別）
+- work_activity_types（操作履歴種別）
+- work_cost_categories（費用カテゴリ）
+
+※すべて comment() を付与すること
+
+==================================================
+3) works 系
+==================================================
+
+--------------------------------------------
+works
+--------------------------------------------
+Schema::create('works', function (Blueprint $table) {
+    $table->id()->comment('作業ID');
+    $table->string('title')->comment('作業名');
+
+    $table->foreignId('equipment_id')->constrained()->restrictOnDelete()->comment('設備ID');
+    $table->foreignId('work_status_id')->constrained()->restrictOnDelete()->comment('ステータスID');
+    $table->foreignId('work_priority_id')->constrained()->restrictOnDelete()->comment('優先度ID');
+    $table->foreignId('work_purpose_id')->constrained()->restrictOnDelete()->comment('作業目的ID');
+
+    $table->foreignId('assigned_user_id')->constrained('users')->restrictOnDelete()->comment('主担当');
+    $table->foreignId('additional_user_id')->nullable()->constrained('users')->nullOnDelete()->comment('追加担当');
+
+    $table->unsignedInteger('production_stop_minutes')->nullable()->comment('停止時間(分)');
+    $table->dateTime('occurred_at')->nullable()->comment('発生日');
+    $table->dateTime('started_at')->nullable()->comment('開始日時');
+    $table->dateTime('completed_at')->nullable()->comment('完了日時');
+
+    $table->text('note')->nullable()->comment('備考');
+
+    $table->timestamps();
+    $table->softDeletes()->comment('削除日時');
+
+    $table->comment('作業');
+});
+
+--------------------------------------------
+work_contents
+--------------------------------------------
+Schema::create('work_contents', function (Blueprint $table) {
+    $table->id()->comment('作業内容ID');
+    $table->foreignId('work_id')->constrained()->cascadeOnDelete()->comment('作業ID');
+    $table->foreignId('work_content_tag_id')->constrained()->restrictOnDelete()->comment('タグID');
+    $table->foreignId('repair_type_id')->constrained()->restrictOnDelete()->comment('修理内容ID');
+
+    $table->text('content')->comment('内容');
+    $table->dateTime('started_at')->nullable()->comment('開始日時');
+    $table->dateTime('ended_at')->nullable()->comment('終了日時');
+
+    $table->timestamps();
+    $table->comment('作業内容');
+});
+
+--------------------------------------------
+work_attachments
+--------------------------------------------
+Schema::create('work_attachments', function (Blueprint $table) {
+    $table->id()->comment('添付ID');
+    $table->foreignId('work_id')->constrained()->cascadeOnDelete()->comment('作業ID');
+    $table->foreignId('work_content_id')->nullable()->constrained()->nullOnDelete()->comment('作業内容ID');
+    $table->foreignId('attachment_type_id')->constrained()->restrictOnDelete()->comment('添付種別');
+
+    $table->string('path')->comment('保存パス');
+    $table->string('original_name')->nullable()->comment('元ファイル名');
+    $table->foreignId('uploaded_by')->nullable()->constrained('users')->nullOnDelete()->comment('アップロード者');
+
+    $table->timestamps();
+    $table->comment('添付ファイル');
+});
+
+--------------------------------------------
+work_used_parts
+--------------------------------------------
+Schema::create('work_used_parts', function (Blueprint $table) {
+    $table->id()->comment('使用部品ID');
+    $table->foreignId('work_id')->constrained()->cascadeOnDelete()->comment('作業ID');
+    $table->foreignId('part_id')->constrained()->restrictOnDelete()->comment('部品ID');
+
+    $table->decimal('qty',10,2)->default(1)->comment('使用数量');
+    $table->text('note')->nullable()->comment('備考');
+
+    $table->timestamps();
+    $table->comment('使用部品');
+});
+
+--------------------------------------------
+work_costs
+--------------------------------------------
+Schema::create('work_costs', function (Blueprint $table) {
+    $table->id()->comment('費用ID');
+    $table->foreignId('work_id')->constrained()->cascadeOnDelete()->comment('作業ID');
+    $table->foreignId('work_cost_category_id')->constrained()->restrictOnDelete()->comment('費用カテゴリ');
+
+    $table->unsignedInteger('amount')->comment('金額');
+    $table->string('vendor_name')->nullable()->comment('業者名');
+    $table->date('occurred_at')->nullable()->comment('発生日');
+    $table->text('note')->nullable()->comment('備考');
+    $table->string('file_path')->nullable()->comment('証憑ファイル');
+
+    $table->timestamps();
+    $table->comment('作業費用');
+});
+
+--------------------------------------------
+work_activities
+--------------------------------------------
+Schema::create('work_activities', function (Blueprint $table) {
+    $table->id()->comment('履歴ID');
+    $table->foreignId('work_id')->constrained()->cascadeOnDelete()->comment('作業ID');
+    $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete()->comment('操作ユーザー');
+    $table->foreignId('work_activity_type_id')->constrained()->restrictOnDelete()->comment('操作種別');
+
+    $table->text('message')->nullable()->comment('コメント');
+    $table->json('meta')->nullable()->comment('差分JSON');
+    $table->timestamp('created_at')->useCurrent()->comment('作成日時');
+
+    $table->comment('操作履歴');
+});
+
+==================================================
+4) Model 作成
+==================================================
+- Equipment / Part / Work / WorkContent / WorkAttachment / WorkUsedPart / WorkCost / WorkActivity
+- マスタ系モデル8種も作成
+- Enum cast は使わない
+- Work は SoftDeletes 使用
+- すべての belongsTo / hasMany を定義
+
+==================================================
+5) routes/web.php
+==================================================
+Route::middleware(['auth','verified'])->group(function () {
+    Route::resource('works', \App\Http\Controllers\WorkController::class)
+        ->only(['create','store']);
+});
+

@@ -31,4 +31,25 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | 外部システムAPI（ユーザー・部品検索）
+    |--------------------------------------------------------------------------
+    | 別システムのAPIベースURL。検索時は ?q=キーワード 等でクエリを付与してください。
+    */
+    'external_api' => [
+        'user_search_url' => env('EXTERNAL_API_USER_SEARCH_URL'),
+        'part_search_url' => env('EXTERNAL_API_PART_SEARCH_URL'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Conservation API（別システム連携）
+    |--------------------------------------------------------------------------
+    | 物品・在庫格納先・ユーザーを扱うREST APIのベースURL
+    */
+    'conservation_api' => [
+        'base_url' => env('CONSERVATION_API_BASE_URL', 'https://akioka.cloud/api'),
+    ],
+
 ];

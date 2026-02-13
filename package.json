@@ -16,5 +16,9 @@
         "tailwindcss": "^3.2.1",
         "vite": "^4.0.0",
         "vue": "^3.2.41"
+    },
+    "dependencies": {
+        "apexcharts": "^5.3.6",
+        "vue3-apexcharts": "^1.10.0"
     }
 }

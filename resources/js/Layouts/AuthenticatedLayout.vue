@@ -1,152 +1,336 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
-import Dropdown from '@/Components/Dropdown.vue';
-import DropdownLink from '@/Components/DropdownLink.vue';
-import NavLink from '@/Components/NavLink.vue';
-import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
+import SidebarNavLink from '@/Components/SidebarNavLink.vue';
+import SidebarNavItem from '@/Components/SidebarNavItem.vue';
 import { Link } from '@inertiajs/vue3';
+import { usePage } from '@inertiajs/vue3';
 
-const showingNavigationDropdown = ref(false);
+const STORAGE_KEY = 'sidebar-collapsed';
+const FLASH_DURATION_MS = 5000;
+
+const page = usePage();
+const sidebarOpen = ref(false);
+const sidebarCollapsed = ref(false);
+const flashVisible = ref(false);
+
+onMounted(() => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored !== null) sidebarCollapsed.value = stored === 'true';
+});
+
+function toggleSidebar() {
+    sidebarCollapsed.value = !sidebarCollapsed.value;
+    localStorage.setItem(STORAGE_KEY, String(sidebarCollapsed.value));
+}
+
+const flashMessage = computed(() => {
+    const flash = page.props.flash;
+    if (!flash) return null;
+    if (flash.success) return { type: 'success', text: flash.success };
+    if (flash.error) return { type: 'error', text: flash.error };
+    if (flash.status) return { type: 'status', text: flash.status };
+    return null;
+});
+
+let flashTimer = null;
+watch(
+    flashMessage,
+    (msg) => {
+        if (flashTimer) {
+            clearTimeout(flashTimer);
+            flashTimer = null;
+        }
+        if (msg) {
+            flashVisible.value = true;
+            flashTimer = setTimeout(() => {
+                flashVisible.value = false;
+                flashTimer = null;
+            }, FLASH_DURATION_MS);
+        } else {
+            flashVisible.value = false;
+        }
+    },
+    { immediate: true }
+);
+
+const isActive = (routeName) => {
+    const path = page.url;
+    const segments = path.split('/').filter(Boolean);
+    if (routeName === 'dashboard') return path === '/' || path === '';
+    if (routeName === 'work.works.index' || routeName === 'work.works.create') return segments[0] === 'work';
+    if (routeName === 'master.top') return segments[0] === 'master' && segments.length <= 1;
+    return false;
+};
+
+const isMasterChildActive = (key) => {
+    const path = page.url;
+    const segments = path.split('/').filter(Boolean);
+    if (key === 'api-test') return segments[0] === 'api-test';
+    if (segments[0] !== 'master') return false;
+    return segments[1] === key;
+};
+
+const masterChildren = computed(() => {
+    const list = [
+        { key: 'api-test', label: 'APIテスト', href: () => route('api-test.index') },
+        { key: 'work-statuses', label: '作業ステータス', href: () => route('master.index', { masterKey: 'work-statuses' }) },
+        { key: 'work-priorities', label: '優先度', href: () => route('master.index', { masterKey: 'work-priorities' }) },
+        { key: 'work-purposes', label: '作業目的', href: () => route('master.index', { masterKey: 'work-purposes' }) },
+        { key: 'work-content-tags', label: '作業タグ', href: () => route('master.index', { masterKey: 'work-content-tags' }) },
+        { key: 'repair-types', label: '修理内容', href: () => route('master.index', { masterKey: 'repair-types' }) },
+        { key: 'attachment-types', label: '添付種別', href: () => route('master.index', { masterKey: 'attachment-types' }) },
+        { key: 'work-activity-types', label: '操作履歴種別', href: () => route('master.index', { masterKey: 'work-activity-types' }) },
+        { key: 'work-cost-categories', label: '費用カテゴリ', href: () => route('master.index', { masterKey: 'work-cost-categories' }) },
+        { key: 'users', label: 'ユーザー', href: () => route('master.users.index') },
+        { key: 'parts', label: '部品', href: () => route('master.parts.index') },
+        { key: 'equipments', label: '設備', href: () => route('master.equipments.index') },
+    ];
+    return list.map(({ key, label, href }) => ({
+        href: href(),
+        label,
+        active: isMasterChildActive(key),
+    }));
+});
+
+const navItems = computed(() => {
+    const master = masterChildren.value;
+    return [
+        { href: route('dashboard'), label: 'ダッシュボード', active: isActive('dashboard'), children: [] },
+        { href: route('work.works.index'), label: '作業', active: isActive('work.works.index'), children: [] },
+        {
+            href: route('master.top'),
+            label: 'マスタ',
+            active: isActive('master.top') || master.some((c) => c.active),
+            children: master,
+        },
+    ];
+});
 </script>
 
 <template>
-    <div>
-        <div class="min-h-screen bg-gray-100">
-            <nav class="bg-white border-b border-gray-100">
-                <!-- Primary Navigation Menu -->
-                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div class="flex justify-between h-16">
-                        <div class="flex">
-                            <!-- Logo -->
-                            <div class="shrink-0 flex items-center">
-                                <Link :href="route('dashboard')">
-                                    <ApplicationLogo
-                                        class="block h-9 w-auto fill-current text-gray-800"
-                                    />
-                                </Link>
-                            </div>
+    <div class="min-h-screen bg-slate-50 flex">
+        <!-- サイドバー（PC） -->
+        <aside
+            class="hidden lg:fixed lg:inset-y-0 lg:flex lg:flex-col lg:transition-[width] lg:duration-200"
+            :class="sidebarCollapsed ? 'lg:w-20' : 'lg:w-64'"
+        >
+            <div class="flex min-h-0 flex-1 flex-col bg-slate-800 border-r border-slate-700">
+                <div class="flex h-16 shrink-0 items-center justify-between gap-1 border-b border-slate-700 px-3">
+                    <Link
+                        :href="route('dashboard')"
+                        class="flex min-w-0 flex-1 items-center gap-2 text-slate-100"
+                    >
+                        <ApplicationLogo class="block h-8 w-auto shrink-0 opacity-90" />
+                        <span
+                            class="truncate text-sm font-semibold tracking-tight transition-all duration-200"
+                            :class="sidebarCollapsed ? 'lg:max-w-0 lg:opacity-0' : ''"
+                        >
+                            設備保全
+                        </span>
+                    </Link>
+                    <button
+                        type="button"
+                        @click="toggleSidebar"
+                        class="shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-slate-700 hover:text-white transition-colors"
+                        :title="sidebarCollapsed ? 'サイドバーを展開' : 'サイドバーを最小化'"
+                    >
+                        <svg
+                            class="h-5 w-5 transition-transform duration-200"
+                            :class="sidebarCollapsed ? 'rotate-180' : ''"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                        >
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="flex flex-1 flex-col overflow-y-auto overflow-x-hidden py-4 px-3">
+                    <nav class="space-y-0.5">
+                        <SidebarNavItem
+                            v-for="item in navItems"
+                            :key="item.label"
+                            :href="item.href"
+                            :label="item.label"
+                            :active="item.active"
+                            :children="item.children"
+                            :collapsed="sidebarCollapsed"
+                        />
+                    </nav>
+                </div>
+                <div class="shrink-0 border-t border-slate-700 p-3">
+                    <div class="rounded-lg bg-slate-700/50 px-3 py-2">
+                        <p class="truncate text-xs font-medium text-slate-200">
+                            {{ $page.props.auth.user.name }}
+                        </p>
+                        <p class="truncate text-xs text-slate-500">{{ $page.props.auth.user.email }}</p>
+                    </div>
+                    <div class="mt-2 space-y-0.5">
+                        <Link
+                            :href="route('profile.edit')"
+                            class="block rounded-lg px-3 py-2 text-xs font-medium text-slate-400 hover:bg-slate-700 hover:text-slate-100 transition-colors"
+                        >
+                            プロフィール
+                        </Link>
+                        <Link
+                            :href="route('logout')"
+                            method="post"
+                            as="button"
+                            class="block w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-400 hover:bg-slate-700 hover:text-slate-100 transition-colors"
+                        >
+                            ログアウト
+                        </Link>
+                    </div>
+                </div>
+            </div>
+        </aside>
 
-                            <!-- Navigation Links -->
-                            <div class="hidden space-x-8 sm:-my-px sm:ml-10 sm:flex">
-                                <NavLink :href="route('dashboard')" :active="route().current('dashboard')">
-                                    Dashboard
-                                </NavLink>
-                            </div>
-                        </div>
+        <!-- モバイル用ヘッダー -->
+        <div class="lg:hidden fixed top-0 left-0 right-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-4 shadow-sm">
+            <button
+                type="button"
+                @click="sidebarOpen = true"
+                class="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+            >
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+            </button>
+            <Link :href="route('dashboard')" class="flex items-center gap-2">
+                <ApplicationLogo class="block h-7 w-auto text-slate-800" />
+                <span class="text-sm font-semibold text-slate-800">設備保全</span>
+            </Link>
+            <div class="w-10" />
+        </div>
 
-                        <div class="hidden sm:flex sm:items-center sm:ml-6">
-                            <!-- Settings Dropdown -->
-                            <div class="ml-3 relative">
-                                <Dropdown align="right" width="48">
-                                    <template #trigger>
-                                        <span class="inline-flex rounded-md">
-                                            <button
-                                                type="button"
-                                                class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-gray-500 bg-white hover:text-gray-700 focus:outline-none transition ease-in-out duration-150"
-                                            >
-                                                {{ $page.props.auth.user.name }}
-
-                                                <svg
-                                                    class="ml-2 -mr-0.5 h-4 w-4"
-                                                    xmlns="http://www.w3.org/2000/svg"
-                                                    viewBox="0 0 20 20"
-                                                    fill="currentColor"
-                                                >
-                                                    <path
-                                                        fill-rule="evenodd"
-                                                        d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                                                        clip-rule="evenodd"
-                                                    />
-                                                </svg>
-                                            </button>
-                                        </span>
-                                    </template>
-
-                                    <template #content>
-                                        <DropdownLink :href="route('profile.edit')"> Profile </DropdownLink>
-                                        <DropdownLink :href="route('logout')" method="post" as="button">
-                                            Log Out
-                                        </DropdownLink>
-                                    </template>
-                                </Dropdown>
-                            </div>
-                        </div>
-
-                        <!-- Hamburger -->
-                        <div class="-mr-2 flex items-center sm:hidden">
-                            <button
-                                @click="showingNavigationDropdown = !showingNavigationDropdown"
-                                class="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:bg-gray-100 focus:text-gray-500 transition duration-150 ease-in-out"
+        <!-- モバイル用サイドバーオーバーレイ -->
+        <div
+            v-show="sidebarOpen"
+            class="lg:hidden fixed inset-0 z-40"
+            aria-modal="true"
+        >
+            <div
+                class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
+                @click="sidebarOpen = false"
+            />
+            <aside class="fixed inset-y-0 left-0 w-72 max-w-[85vw] flex flex-col bg-slate-800 border-r border-slate-700 shadow-xl">
+                <div class="flex h-14 items-center justify-between px-4 border-b border-slate-700">
+                    <span class="text-sm font-semibold text-slate-100">メニュー</span>
+                    <button
+                        type="button"
+                        @click="sidebarOpen = false"
+                        class="rounded-lg p-2 text-slate-400 hover:text-white hover:bg-slate-700"
+                    >
+                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="flex-1 overflow-y-auto py-4 px-3">
+                    <nav class="space-y-0.5">
+                        <SidebarNavLink
+                            :href="route('dashboard')"
+                            :active="isActive('dashboard')"
+                            @click="sidebarOpen = false"
+                        >
+                            <span>ダッシュボード</span>
+                        </SidebarNavLink>
+                        <SidebarNavLink
+                            :href="route('work.works.index')"
+                            :active="isActive('work.works.index')"
+                            @click="sidebarOpen = false"
+                        >
+                            <span>作業</span>
+                        </SidebarNavLink>
+                        <SidebarNavLink
+                            :href="route('master.top')"
+                            :active="isActive('master.index')"
+                            @click="sidebarOpen = false"
+                        >
+                            <span>マスタ</span>
+                        </SidebarNavLink>
+                        <div class="border-t border-slate-700 pt-2 mt-2 pl-3 space-y-0.5">
+                            <Link
+                                v-for="child in masterChildren"
+                                :key="child.href"
+                                :href="child.href"
+                                @click="sidebarOpen = false"
+                                :class="[
+                                    'block py-2 text-sm',
+                                    child.active ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200',
+                                ]"
                             >
-                                <svg class="h-6 w-6" stroke="currentColor" fill="none" viewBox="0 0 24 24">
-                                    <path
-                                        :class="{
-                                            hidden: showingNavigationDropdown,
-                                            'inline-flex': !showingNavigationDropdown,
-                                        }"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        stroke-width="2"
-                                        d="M4 6h16M4 12h16M4 18h16"
-                                    />
-                                    <path
-                                        :class="{
-                                            hidden: !showingNavigationDropdown,
-                                            'inline-flex': showingNavigationDropdown,
-                                        }"
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        stroke-width="2"
-                                        d="M6 18L18 6M6 6l12 12"
-                                    />
-                                </svg>
-                            </button>
+                                {{ child.label }}
+                            </Link>
                         </div>
-                    </div>
+                    </nav>
                 </div>
-
-                <!-- Responsive Navigation Menu -->
-                <div
-                    :class="{ block: showingNavigationDropdown, hidden: !showingNavigationDropdown }"
-                    class="sm:hidden"
-                >
-                    <div class="pt-2 pb-3 space-y-1">
-                        <ResponsiveNavLink :href="route('dashboard')" :active="route().current('dashboard')">
-                            Dashboard
-                        </ResponsiveNavLink>
+                <div class="border-t border-slate-700 p-3">
+                    <div class="rounded-lg bg-slate-700/50 px-3 py-2 mb-2">
+                        <p class="text-xs font-medium text-slate-200">{{ $page.props.auth.user.name }}</p>
+                        <p class="truncate text-xs text-slate-500">{{ $page.props.auth.user.email }}</p>
                     </div>
-
-                    <!-- Responsive Settings Options -->
-                    <div class="pt-4 pb-1 border-t border-gray-200">
-                        <div class="px-4">
-                            <div class="font-medium text-base text-gray-800">
-                                {{ $page.props.auth.user.name }}
-                            </div>
-                            <div class="font-medium text-sm text-gray-500">{{ $page.props.auth.user.email }}</div>
-                        </div>
-
-                        <div class="mt-3 space-y-1">
-                            <ResponsiveNavLink :href="route('profile.edit')"> Profile </ResponsiveNavLink>
-                            <ResponsiveNavLink :href="route('logout')" method="post" as="button">
-                                Log Out
-                            </ResponsiveNavLink>
-                        </div>
-                    </div>
+                    <Link
+                        :href="route('profile.edit')"
+                        @click="sidebarOpen = false"
+                        class="block rounded-lg px-3 py-2 text-xs font-medium text-slate-400 hover:bg-slate-700 hover:text-slate-100"
+                    >
+                        プロフィール
+                    </Link>
+                    <Link
+                        :href="route('logout')"
+                        method="post"
+                        as="button"
+                        @click="sidebarOpen = false"
+                        class="block w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-slate-400 hover:bg-slate-700 hover:text-slate-100"
+                    >
+                        ログアウト
+                    </Link>
                 </div>
-            </nav>
+            </aside>
+        </div>
 
-            <!-- Page Heading -->
-            <header class="bg-white shadow" v-if="$slots.header">
-                <div class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <!-- メインコンテンツ -->
+        <div
+            class="flex flex-1 flex-col transition-[margin] duration-200"
+            :class="sidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'"
+        >
+            <header
+                v-if="$slots.header"
+                class="border-b border-slate-200 bg-white/80 backdrop-blur-sm"
+            >
+                <div class="px-4 py-5 sm:px-6 lg:px-8">
                     <slot name="header" />
                 </div>
             </header>
 
-            <!-- Page Content -->
-            <main>
-                <slot />
+            <main class="flex-1 pt-14 lg:pt-0">
+                <div class="px-4 py-6 sm:px-6 lg:px-8">
+                    <slot />
+                </div>
             </main>
         </div>
+
+        <!-- フラッシュメッセージ（右下固定・自動フェードアウト） -->
+        <Transition
+            enter-active-class="transition duration-300 ease-out"
+            enter-from-class="opacity-0 translate-y-2"
+            enter-to-class="opacity-100 translate-y-0"
+            leave-active-class="transition duration-300 ease-in"
+            leave-from-class="opacity-100 translate-y-0"
+            leave-to-class="opacity-0 translate-y-2"
+        >
+            <div
+                v-if="flashMessage && flashVisible"
+                :class="{
+                    'bg-emerald-50 text-emerald-800 border-emerald-200': flashMessage.type === 'success' || flashMessage.type === 'status',
+                    'bg-red-50 text-red-800 border-red-200': flashMessage.type === 'error',
+                }"
+                class="fixed bottom-4 right-4 z-50 max-w-sm rounded-xl border px-4 py-3 text-sm font-medium shadow-lg"
+            >
+                {{ flashMessage.text }}
+            </div>
+        </Transition>
     </div>
 </template>
