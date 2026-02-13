@@ -73,7 +73,8 @@ const isMasterChildActive = (key) => {
 
 const masterChildren = computed(() => {
     const list = [
-        { key: 'api-test', label: 'APIテスト', href: () => route('api-test.index') },
+        { key: 'parts', label: '部品', href: () => route('master.parts.index') },
+        { key: 'equipments', label: '設備', href: () => route('master.equipments.index') },
         { key: 'work-statuses', label: '作業ステータス', href: () => route('master.index', { masterKey: 'work-statuses' }) },
         { key: 'work-priorities', label: '優先度', href: () => route('master.index', { masterKey: 'work-priorities' }) },
         { key: 'work-purposes', label: '作業目的', href: () => route('master.index', { masterKey: 'work-purposes' }) },
@@ -83,8 +84,7 @@ const masterChildren = computed(() => {
         { key: 'work-activity-types', label: '操作履歴種別', href: () => route('master.index', { masterKey: 'work-activity-types' }) },
         { key: 'work-cost-categories', label: '費用カテゴリ', href: () => route('master.index', { masterKey: 'work-cost-categories' }) },
         { key: 'users', label: 'ユーザー', href: () => route('master.users.index') },
-        { key: 'parts', label: '部品', href: () => route('master.parts.index') },
-        { key: 'equipments', label: '設備', href: () => route('master.equipments.index') },
+        { key: 'api-test', label: 'APIテスト', href: () => route('api-test.index') },
     ];
     return list.map(({ key, label, href }) => ({
         href: href(),
