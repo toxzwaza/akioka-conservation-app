@@ -8,6 +8,7 @@ use App\Models\PartUserDisplayName;
 use App\Services\PartDisplayNameService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 
 class MasterPartController extends Controller
@@ -67,17 +68,22 @@ class MasterPartController extends Controller
             }
 
             $existingExternalIds = Part::whereNotNull('external_id')->pluck('external_id')->toArray();
+            $baseUrl = rtrim(config('services.conservation_api.base_url'), '/');
+            $siteRoot = preg_replace('#/api$#', '', $baseUrl) ?: $baseUrl;
 
-            $normalized = collect($items)->map(function ($row) use ($existingExternalIds) {
+            $normalized = collect($items)->map(function ($row) use ($existingExternalIds, $siteRoot) {
                 $id = $row['id'] ?? null;
                 $externalId = $id !== null ? (string) $id : '';
                 $suppliers = $row['stock_suppliers'] ?? [];
                 $mainSupplier = collect($suppliers)->firstWhere('main_flg', 1) ?? $suppliers[0] ?? null;
                 $supplierName = $mainSupplier ? (($mainSupplier['supplier'] ?? [])['name'] ?? null) : null;
 
+                $thumbnailUrl = $this->resolveThumbnailUrl($row, $siteRoot);
+
                 return [
                     'id' => $id,
                     'external_id' => $externalId,
+                    'thumbnail_url' => $thumbnailUrl,
                     'name' => $row['name'] ?? '',
                     's_name' => $row['s_name'] ?? null,
                     'stock_no' => $row['stock_no'] ?? null,
@@ -92,6 +98,31 @@ class MasterPartController extends Controller
         } catch (\Throwable $e) {
             return response()->json(['items' => [], 'message' => '検索中にエラーが発生しました。']);
         }
+    }
+
+    /**
+     * Conservation API レスポンスからサムネイル画像URLを解決する
+     */
+    private function resolveThumbnailUrl(array $row, string $siteRoot): ?string
+    {
+        $pathOrUrl = null;
+        $stockImages = $row['stock_images'] ?? [];
+        if (is_array($stockImages) && count($stockImages) > 0) {
+            $first = $stockImages[0];
+            $pathOrUrl = $first['thumbnail_url'] ?? $first['thumbnail_path'] ?? $first['url'] ?? $first['path'] ?? $first['image_path'] ?? null;
+        }
+        if ($pathOrUrl === null) {
+            $pathOrUrl = $row['img_path'] ?? null;
+        }
+        if (empty($pathOrUrl)) {
+            return null;
+        }
+        if (str_starts_with($pathOrUrl, 'http://') || str_starts_with($pathOrUrl, 'https://')) {
+            return $pathOrUrl;
+        }
+        $path = ltrim($pathOrUrl, '/');
+
+        return rtrim($siteRoot, '/') . '/' . $path;
     }
 
     /**
@@ -149,11 +180,61 @@ class MasterPartController extends Controller
 
         $allEquipments = Equipment::orderBy('name')->get(['id', 'name']);
 
+        $baseUrl = rtrim(config('services.conservation_api.base_url'), '/');
+        $siteRoot = preg_replace('#/api$#', '', $baseUrl) ?: $baseUrl;
+        $apiThumbnailUrl = $apiDetail ? $this->resolveThumbnailUrl($apiDetail, $siteRoot) : null;
+        $localThumbnailUrl = $part->image_path
+            ? url('/storage/' . $part->image_path)
+            : null;
+        $thumbnailUrl = $localThumbnailUrl ?? $apiThumbnailUrl;
+
         return Inertia::render('Master/Parts/Show', [
             'item' => $item,
             'apiDetail' => $apiDetail,
             'allEquipments' => $allEquipments,
+            'thumbnailUrl' => $thumbnailUrl,
+            'hasLocalImage' => (bool) $part->image_path,
         ]);
+    }
+
+    /**
+     * 部品のサムネイル画像をアップロード
+     */
+    public function uploadImage(Request $request, int $id)
+    {
+        $part = Part::findOrFail($id);
+
+        $request->validate([
+            'image' => ['required', 'image', 'mimes:jpeg,jpg,png,gif,webp', 'max:5120'],
+        ], [], [
+            'image' => '画像',
+        ]);
+
+        if ($part->image_path) {
+            Storage::disk('public')->delete($part->image_path);
+        }
+
+        $file = $request->file('image');
+        $path = $file->store('parts/' . $part->id, 'public');
+
+        $part->update(['image_path' => $path]);
+
+        return back()->with('success', '画像をアップロードしました。');
+    }
+
+    /**
+     * 部品のアップロード画像を削除
+     */
+    public function destroyImage(int $id)
+    {
+        $part = Part::findOrFail($id);
+
+        if ($part->image_path) {
+            Storage::disk('public')->delete($part->image_path);
+            $part->update(['image_path' => null]);
+        }
+
+        return back()->with('success', '画像を削除しました。');
     }
 
     /**

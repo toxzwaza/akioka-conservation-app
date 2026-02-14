@@ -63,18 +63,24 @@ class MasterController extends Controller
     {
         [$modelClass, $title] = $this->getModelAndTitle($masterKey);
 
+        $allowedColors = array_merge([''], config('badge.hex_colors', []));
+        $colorRules = ['nullable', 'string', \Illuminate\Validation\Rule::in($allowedColors)];
+
         $validated = $request->validate([
             'name'       => ['required', 'string', 'max:255'],
+            'color'      => $colorRules,
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'is_active'  => ['nullable', 'boolean'],
         ], [], [
             'name'       => '表示名',
+            'color'      => '表示色',
             'sort_order' => '並び順',
             'is_active'  => '有効',
         ]);
 
         $validated['sort_order'] = (int) ($validated['sort_order'] ?? 0);
         $validated['is_active'] = (bool) ($validated['is_active'] ?? true);
+        $validated['color'] = ! empty(trim($validated['color'] ?? '')) ? trim($validated['color']) : null;
 
         $modelClass::create($validated);
 
@@ -120,18 +126,24 @@ class MasterController extends Controller
         [$modelClass, $title] = $this->getModelAndTitle($masterKey);
         $item = $modelClass::findOrFail($id);
 
+        $allowedColors = array_merge([''], config('badge.hex_colors', []));
+        $colorRules = ['nullable', 'string', \Illuminate\Validation\Rule::in($allowedColors)];
+
         $validated = $request->validate([
             'name'       => ['required', 'string', 'max:255'],
+            'color'      => $colorRules,
             'sort_order' => ['nullable', 'integer', 'min:0'],
             'is_active'  => ['nullable', 'boolean'],
         ], [], [
             'name'       => '表示名',
+            'color'      => '表示色',
             'sort_order' => '並び順',
             'is_active'  => '有効',
         ]);
 
         $validated['sort_order'] = (int) ($validated['sort_order'] ?? 0);
         $validated['is_active'] = (bool) ($validated['is_active'] ?? true);
+        $validated['color'] = ! empty(trim($validated['color'] ?? '')) ? trim($validated['color']) : null;
 
         $item->update($validated);
 

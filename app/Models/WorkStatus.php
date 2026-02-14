@@ -12,6 +12,7 @@ class WorkStatus extends Model
 
     protected $fillable = [
         'name',
+        'color',
         'sort_order',
         'is_active',
     ];

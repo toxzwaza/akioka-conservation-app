@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import Badge from '@/Components/Badge.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
@@ -17,6 +18,9 @@ const props = defineProps({
     parts: Array,
     workCostCategories: Array,
     workStatuses: Array,
+    workPriorities: Array,
+    workPurposes: Array,
+    equipmentOptions: Array,
     users: Array,
 });
 
@@ -31,6 +35,19 @@ const commentActivities = computed(() =>
     (props.work?.work_activities ?? []).filter((a) => a.work_activity_type?.name === 'コメント')
 );
 const isOwnComment = (activity) => activity.user_id != null && authUser.value?.id === activity.user_id;
+
+/** 設備の祖先パス（ルート→親→...→設備）を取得 */
+const equipmentPath = computed(() => {
+    const eq = props.work?.equipment;
+    if (!eq) return [];
+    const path = [];
+    let cur = eq;
+    while (cur) {
+        path.unshift(cur);
+        cur = cur.parent ?? null;
+    }
+    return path;
+});
 
 const formatDate = (v) => (v ? new Date(v).toLocaleDateString('ja-JP') : '—');
 const formatDateTime = (v) => (v ? new Date(v).toLocaleString('ja-JP') : '—');
@@ -163,14 +180,42 @@ function deleteComment(activity) {
 
 const showWorkEdit = ref(false);
 const workEditForm = useForm({
+    title: '',
+    equipment_id: '',
     work_status_id: '',
+    work_priority_id: '',
+    work_purpose_id: '',
     assigned_user_id: '',
     additional_user_id: '',
+    production_stop_minutes: '',
+    occurred_at: '',
+    started_at: '',
+    completed_at: '',
+    note: '',
 });
+function toDatetimeLocal(v) {
+    if (!v) return '';
+    const d = new Date(v);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const h = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${day}T${h}:${min}`;
+}
 function openWorkEdit() {
+    workEditForm.title = props.work.title ?? '';
+    workEditForm.equipment_id = props.work.equipment_id ?? '';
     workEditForm.work_status_id = props.work.work_status_id ?? '';
+    workEditForm.work_priority_id = props.work.work_priority_id ?? '';
+    workEditForm.work_purpose_id = props.work.work_purpose_id ?? '';
     workEditForm.assigned_user_id = props.work.assigned_user_id ?? '';
     workEditForm.additional_user_id = props.work.additional_user_id ?? '';
+    workEditForm.production_stop_minutes = props.work.production_stop_minutes ?? '';
+    workEditForm.occurred_at = toDatetimeLocal(props.work.occurred_at);
+    workEditForm.started_at = toDatetimeLocal(props.work.started_at);
+    workEditForm.completed_at = toDatetimeLocal(props.work.completed_at);
+    workEditForm.note = props.work.note ?? '';
     showWorkEdit.value = true;
 }
 function submitWorkEdit() {
@@ -201,7 +246,7 @@ function submitWorkEdit() {
 
         <div class="flex gap-6">
             <!-- 左: 詳細コンテンツ（約70%） -->
-            <div class="flex-1 min-w-0 max-w-4xl space-y-6">
+            <div class="flex-1 min-w-0 max-w-full space-y-6">
 
             <!-- 作業概要 -->
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -210,14 +255,30 @@ function submitWorkEdit() {
                     <SecondaryButton type="button" @click="openWorkEdit">編集</SecondaryButton>
                 </div>
                 <dl class="px-4 py-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                    <div><dt class="text-slate-500">設備</dt><dd class="font-medium text-slate-800">{{ work.equipment?.name ?? '—' }}</dd></div>
-                    <div><dt class="text-slate-500">ステータス</dt><dd class="font-medium text-slate-800">{{ work.work_status?.name ?? '—' }}</dd></div>
-                    <div><dt class="text-slate-500">優先度</dt><dd class="font-medium text-slate-800">{{ work.work_priority?.name ?? '—' }}</dd></div>
-                    <div><dt class="text-slate-500">作業目的</dt><dd class="font-medium text-slate-800">{{ work.work_purpose?.name ?? '—' }}</dd></div>
-                    <div><dt class="text-slate-500">主担当</dt><dd class="font-medium text-slate-800">{{ work.assigned_user?.name ?? '—' }}</dd></div>
-                    <div><dt class="text-slate-500">追加担当</dt><dd class="font-medium text-slate-800">{{ work.additional_user?.name ?? '—' }}</dd></div>
+                    <div><dt class="text-slate-500">作業名</dt><dd class="font-medium text-slate-800">{{ work.title ?? '—' }}</dd></div>
+                    <div>
+                        <dt class="text-slate-500">設備</dt>
+                        <dd class="text-slate-800">
+                            <template v-if="equipmentPath.length">
+                                <template v-for="(eq, i) in equipmentPath" :key="eq.id">
+                                    <span v-if="i < equipmentPath.length - 1" class="text-slate-400">{{ eq.name }} › </span>
+                                    <span v-else class="font-semibold">{{ eq.name }}</span>
+                                </template>
+                            </template>
+                            <template v-else>—</template>
+                        </dd>
+                    </div>
+                    <div><dt class="text-slate-500">作業目的</dt><dd class="font-medium text-slate-800"><Badge :label="work.work_purpose?.name ?? '—'" :color="work.work_purpose?.color" /></dd></div>
+                    <div><dt class="text-slate-500">優先度</dt><dd class="font-medium text-slate-800"><Badge :label="work.work_priority?.name ?? '—'" :color="work.work_priority?.color" /></dd></div>
+                    <div><dt class="text-slate-500">主担当</dt><dd class="font-medium text-slate-800"><Badge :label="work.assigned_user?.name ?? '—'" :color="work.assigned_user?.color" /></dd></div>
+                    <div><dt class="text-slate-500">追加担当</dt><dd class="font-medium text-slate-800"><Badge :label="work.additional_user?.name ?? '—'" :color="work.additional_user?.color" /></dd></div>
                     <div><dt class="text-slate-500">発生日</dt><dd class="font-medium text-slate-800">{{ formatDateTime(work.occurred_at) }}</dd></div>
-                    <div><dt class="text-slate-500">開始〜完了</dt><dd class="font-medium text-slate-800">{{ formatDateTime(work.started_at) }} ～ {{ formatDateTime(work.completed_at) }}</dd></div>
+                    <div><dt class="text-slate-500">停止時間</dt><dd class="font-medium text-slate-800">{{ work.production_stop_minutes != null ? work.production_stop_minutes + '分' : '—' }}</dd></div>
+                    <div><dt class="text-slate-500">開始日時</dt><dd class="font-medium text-slate-800">{{ formatDateTime(work.started_at) }}</dd></div>
+                    <div><dt class="text-slate-500">完了日時</dt><dd class="font-medium text-slate-800">{{ formatDateTime(work.completed_at) }}</dd></div>
+                    <div><dt class="text-slate-500">作成日時</dt><dd class="font-medium text-slate-800">{{ formatDateTime(work.created_at) }}</dd></div>
+                    <div><dt class="text-slate-500">更新日時</dt><dd class="font-medium text-slate-800">{{ formatDateTime(work.updated_at) }}</dd></div>
+                    <div class="sm:col-span-2"><dt class="text-slate-500">ステータス</dt><dd class="font-medium text-slate-800"><Badge :label="work.work_status?.name ?? '—'" :color="work.work_status?.color" /></dd></div>
                     <div v-if="work.note" class="sm:col-span-2"><dt class="text-slate-500">備考</dt><dd class="font-medium text-slate-800 whitespace-pre-wrap">{{ work.note }}</dd></div>
                 </dl>
             </div>
@@ -232,8 +293,8 @@ function submitWorkEdit() {
                         <thead><tr class="text-left text-slate-500 border-b"><th class="pb-2">タグ</th><th class="pb-2">修理内容</th><th class="pb-2">内容</th><th class="pb-2">開始〜終了</th></tr></thead>
                         <tbody class="divide-y divide-slate-100">
                             <tr v-for="c in work.work_contents" :key="c.id">
-                                <td class="py-2">{{ c.work_content_tag?.name }}</td>
-                                <td class="py-2">{{ c.repair_type?.name }}</td>
+                                <td class="py-2"><Badge :label="c.work_content_tag?.name ?? '—'" :color="c.work_content_tag?.color" /></td>
+                                <td class="py-2"><Badge :label="c.repair_type?.name ?? '—'" :color="c.repair_type?.color" /></td>
                                 <td class="py-2 whitespace-pre-wrap">{{ c.content }}</td>
                                 <td class="py-2">{{ formatDateTime(c.started_at) }} ～ {{ formatDateTime(c.ended_at) }}</td>
                             </tr>
@@ -372,7 +433,7 @@ function submitWorkEdit() {
                         <thead><tr class="text-left text-slate-500 border-b"><th class="pb-2">カテゴリ</th><th class="pb-2">金額</th><th class="pb-2">業者</th><th class="pb-2">発生日</th></tr></thead>
                         <tbody class="divide-y divide-slate-100">
                             <tr v-for="c in work.work_costs" :key="c.id">
-                                <td class="py-2">{{ c.work_cost_category?.name }}</td>
+                                <td class="py-2"><Badge :label="c.work_cost_category?.name ?? '—'" :color="c.work_cost_category?.color" /></td>
                                 <td class="py-2">{{ Number(c.amount).toLocaleString() }}円</td>
                                 <td class="py-2">{{ c.vendor_name || '—' }}</td>
                                 <td class="py-2">{{ formatDate(c.occurred_at) }}</td>
@@ -461,7 +522,7 @@ function submitWorkEdit() {
                                     <div class="flex items-center gap-2 text-slate-500 mb-1">
                                         <span>{{ formatDateTime(a.created_at) }}</span>
                                         <span>{{ a.user?.name ?? '—' }}</span>
-                                        <span v-if="a.work_activity_type?.name" class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">{{ a.work_activity_type.name }}</span>
+                                        <Badge v-if="a.work_activity_type?.name" :label="a.work_activity_type.name" :color="a.work_activity_type.color" />
                                     </div>
                                     <p class="text-slate-800 whitespace-pre-wrap">{{ a.message ?? '—' }}</p>
                                 </div>
@@ -527,32 +588,92 @@ function submitWorkEdit() {
         <!-- 作業概要編集モーダル -->
         <Teleport to="body">
             <div v-if="showWorkEdit" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="showWorkEdit = false">
-                <div class="bg-white rounded-xl shadow-lg w-full max-w-md p-6" @click.stop>
+                <div class="bg-white rounded-xl shadow-lg w-full max-w-lg max-h-[90vh] overflow-y-auto p-6" @click.stop>
                     <h3 class="text-lg font-semibold text-slate-800 mb-4">作業概要を編集</h3>
                     <form @submit.prevent="submitWorkEdit" class="space-y-4">
                         <div>
-                            <InputLabel value="ステータス" />
-                            <select v-model="workEditForm.work_status_id" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm">
-                                <option value="">選択</option>
-                                <option v-for="s in workStatuses" :key="s.id" :value="s.id">{{ s.name }}</option>
-                            </select>
-                            <InputError :message="workEditForm.errors.work_status_id" />
+                            <InputLabel value="作業名" />
+                            <TextInput v-model="workEditForm.title" type="text" class="mt-1 block w-full" required />
+                            <InputError :message="workEditForm.errors.title" />
                         </div>
                         <div>
-                            <InputLabel value="主担当" />
-                            <select v-model="workEditForm.assigned_user_id" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm">
-                                <option value="">選択</option>
-                                <option v-for="u in users" :key="u.id" :value="u.id">{{ u.name }}</option>
+                            <InputLabel value="設備" />
+                            <select v-model="workEditForm.equipment_id" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm" required>
+                                <option value="">選択してください</option>
+                                <option v-for="opt in equipmentOptions" :key="opt.id" :value="opt.id">{{ opt.display_label ?? opt.name }}</option>
                             </select>
-                            <InputError :message="workEditForm.errors.assigned_user_id" />
+                            <InputError :message="workEditForm.errors.equipment_id" />
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <InputLabel value="ステータス" />
+                                <select v-model="workEditForm.work_status_id" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm" required>
+                                    <option value="">選択</option>
+                                    <option v-for="s in workStatuses" :key="s.id" :value="s.id">{{ s.name }}</option>
+                                </select>
+                                <InputError :message="workEditForm.errors.work_status_id" />
+                            </div>
+                            <div>
+                                <InputLabel value="優先度" />
+                                <select v-model="workEditForm.work_priority_id" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm" required>
+                                    <option value="">選択</option>
+                                    <option v-for="p in workPriorities" :key="p.id" :value="p.id">{{ p.name }}</option>
+                                </select>
+                                <InputError :message="workEditForm.errors.work_priority_id" />
+                            </div>
+                            <div>
+                                <InputLabel value="作業目的" />
+                                <select v-model="workEditForm.work_purpose_id" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm" required>
+                                    <option value="">選択</option>
+                                    <option v-for="p in workPurposes" :key="p.id" :value="p.id">{{ p.name }}</option>
+                                </select>
+                                <InputError :message="workEditForm.errors.work_purpose_id" />
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <InputLabel value="主担当" />
+                                <select v-model="workEditForm.assigned_user_id" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm" required>
+                                    <option value="">選択</option>
+                                    <option v-for="u in users" :key="u.id" :value="u.id">{{ u.name }}</option>
+                                </select>
+                                <InputError :message="workEditForm.errors.assigned_user_id" />
+                            </div>
+                            <div>
+                                <InputLabel value="追加担当" />
+                                <select v-model="workEditForm.additional_user_id" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm">
+                                    <option value="">なし</option>
+                                    <option v-for="u in users" :key="u.id" :value="u.id">{{ u.name }}</option>
+                                </select>
+                                <InputError :message="workEditForm.errors.additional_user_id" />
+                            </div>
                         </div>
                         <div>
-                            <InputLabel value="追加担当" />
-                            <select v-model="workEditForm.additional_user_id" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm">
-                                <option value="">選択</option>
-                                <option v-for="u in users" :key="u.id" :value="u.id">{{ u.name }}</option>
-                            </select>
-                            <InputError :message="workEditForm.errors.additional_user_id" />
+                            <InputLabel value="停止時間（分）" />
+                            <TextInput v-model="workEditForm.production_stop_minutes" type="number" min="0" class="mt-1 block w-full" />
+                            <InputError :message="workEditForm.errors.production_stop_minutes" />
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                                <InputLabel value="発生日" />
+                                <TextInput v-model="workEditForm.occurred_at" type="datetime-local" class="mt-1 block w-full" />
+                                <InputError :message="workEditForm.errors.occurred_at" />
+                            </div>
+                            <div>
+                                <InputLabel value="開始日時" />
+                                <TextInput v-model="workEditForm.started_at" type="datetime-local" class="mt-1 block w-full" />
+                                <InputError :message="workEditForm.errors.started_at" />
+                            </div>
+                            <div>
+                                <InputLabel value="完了日時" />
+                                <TextInput v-model="workEditForm.completed_at" type="datetime-local" class="mt-1 block w-full" />
+                                <InputError :message="workEditForm.errors.completed_at" />
+                            </div>
+                        </div>
+                        <div>
+                            <InputLabel value="備考" />
+                            <textarea v-model="workEditForm.note" rows="3" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm" />
+                            <InputError :message="workEditForm.errors.note" />
                         </div>
                         <div class="flex justify-end gap-2 pt-4">
                             <button type="button" class="text-slate-600 hover:text-slate-800" @click="showWorkEdit = false">キャンセル</button>

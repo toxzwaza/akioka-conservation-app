@@ -69,6 +69,8 @@ Route::middleware(['auth', 'verified'])->prefix('master')->name('master.')->grou
     Route::post('parts/search', [MasterPartController::class, 'searchApi'])->name('parts.search');
     Route::post('parts', [MasterPartController::class, 'store'])->name('parts.store');
     Route::get('parts/{id}', [MasterPartController::class, 'show'])->whereNumber('id')->name('parts.show');
+    Route::post('parts/{id}/image', [MasterPartController::class, 'uploadImage'])->whereNumber('id')->name('parts.image.upload');
+    Route::delete('parts/{id}/image', [MasterPartController::class, 'destroyImage'])->whereNumber('id')->name('parts.image.destroy');
     Route::put('parts/{id}/display-name', [MasterPartController::class, 'updateDisplayName'])->whereNumber('id')->name('parts.update-display-name');
     Route::put('parts/{id}/memo', [MasterPartController::class, 'updateMemo'])->whereNumber('id')->name('parts.update-memo');
     Route::post('parts/{id}/equipments', [MasterPartController::class, 'attachEquipment'])->whereNumber('id')->name('parts.equipments.attach');
@@ -80,6 +82,8 @@ Route::middleware(['auth', 'verified'])->prefix('master')->name('master.')->grou
     Route::get('equipments/create', [MasterEquipmentController::class, 'create'])->name('equipments.create');
     Route::post('equipments', [MasterEquipmentController::class, 'store'])->name('equipments.store');
     Route::get('equipments/{id}', [MasterEquipmentController::class, 'show'])->whereNumber('id')->name('equipments.show');
+    Route::post('equipments/{id}/image', [MasterEquipmentController::class, 'uploadImage'])->whereNumber('id')->name('equipments.image.upload');
+    Route::delete('equipments/{id}/image', [MasterEquipmentController::class, 'destroyImage'])->whereNumber('id')->name('equipments.image.destroy');
     Route::get('equipments/{id}/edit', [MasterEquipmentController::class, 'edit'])->whereNumber('id')->name('equipments.edit');
     Route::put('equipments/{id}', [MasterEquipmentController::class, 'update'])->whereNumber('id')->name('equipments.update');
     Route::delete('equipments/{id}', [MasterEquipmentController::class, 'destroy'])->whereNumber('id')->name('equipments.destroy');

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Equipment;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -11,19 +12,39 @@ class MasterEquipmentController extends Controller
 {
     public function index()
     {
-        $items = Equipment::with('parent:id,name')->orderBy('name')->get();
+        $all = Equipment::with('parent:id,name')->get();
+        $tree = $this->buildEquipmentTree($all);
 
         return Inertia::render('Master/Equipments/Index', [
-            'items' => $items,
+            'tree' => $tree,
         ]);
+    }
+
+    /**
+     * 親なしをルートとし、子設備をネストした木構造を返す
+     */
+    private function buildEquipmentTree($equipments): array
+    {
+        $byParent = $equipments->groupBy('parent_id');
+        $roots = ($byParent->get(null) ?? collect())->sortBy('name')->values();
+
+        $buildNode = function ($item) use (&$buildNode, $byParent) {
+            $children = ($byParent->get($item->id) ?? collect())->sortBy('name')->values();
+            $node = array_merge($item->toArray(), [
+                'thumbnail_url' => $item->image_path ? url('/storage/' . $item->image_path) : null,
+                'children' => $children->map($buildNode)->values()->all(),
+            ]);
+
+            return $node;
+        };
+
+        return $roots->map($buildNode)->values()->all();
     }
 
     public function create()
     {
-        $parents = Equipment::orderBy('name')->get(['id', 'name']);
-
         return Inertia::render('Master/Equipments/Create', [
-            'parents' => $parents,
+            'parents' => Equipment::getOptionsForSelect(null),
         ]);
     }
 
@@ -60,19 +81,64 @@ class MasterEquipmentController extends Controller
     {
         $item = Equipment::with('parent:id,name')->findOrFail($id);
 
+        $thumbnailUrl = $item->image_path
+            ? url('/storage/' . $item->image_path)
+            : null;
+
         return Inertia::render('Master/Equipments/Show', [
             'item' => $item,
+            'thumbnailUrl' => $thumbnailUrl,
+            'hasLocalImage' => (bool) $item->image_path,
         ]);
+    }
+
+    /**
+     * 設備のサムネイル画像をアップロード
+     */
+    public function uploadImage(Request $request, int $id)
+    {
+        $equipment = Equipment::findOrFail($id);
+
+        $request->validate([
+            'image' => ['required', 'image', 'mimes:jpeg,jpg,png,gif,webp', 'max:5120'],
+        ], [], [
+            'image' => '画像',
+        ]);
+
+        if ($equipment->image_path) {
+            Storage::disk('public')->delete($equipment->image_path);
+        }
+
+        $file = $request->file('image');
+        $path = $file->store('equipments/' . $equipment->id, 'public');
+
+        $equipment->update(['image_path' => $path]);
+
+        return back()->with('success', '画像をアップロードしました。');
+    }
+
+    /**
+     * 設備のアップロード画像を削除
+     */
+    public function destroyImage(int $id)
+    {
+        $equipment = Equipment::findOrFail($id);
+
+        if ($equipment->image_path) {
+            Storage::disk('public')->delete($equipment->image_path);
+            $equipment->update(['image_path' => null]);
+        }
+
+        return back()->with('success', '画像を削除しました。');
     }
 
     public function edit(int $id)
     {
         $item = Equipment::findOrFail($id);
-        $parents = Equipment::where('id', '!=', $id)->orderBy('name')->get(['id', 'name']);
 
         return Inertia::render('Master/Equipments/Edit', [
             'item'   => $item,
-            'parents' => $parents,
+            'parents' => Equipment::getOptionsForSelect($id),
         ]);
     }
 

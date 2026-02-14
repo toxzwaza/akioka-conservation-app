@@ -156,14 +156,20 @@ class MasterUserController extends Controller
     {
         $user = User::findOrFail($id);
 
+        $allowedColors = array_merge([''], config('badge.hex_colors', []));
+        $colorRules = ['nullable', 'string', \Illuminate\Validation\Rule::in($allowedColors)];
+
         $validated = $request->validate([
             'name'  => ['required', 'string', 'max:255'],
+            'color' => $colorRules,
             'email' => ['nullable', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
         ], [], [
             'name'  => '氏名',
+            'color' => '表示色',
             'email' => 'メールアドレス',
         ]);
 
+        $validated['color'] = ! empty(trim($validated['color'] ?? '')) ? trim($validated['color']) : null;
         $user->update($validated);
 
         return redirect()->route('master.users.show', $user->id)->with('success', 'ユーザーを更新しました。');

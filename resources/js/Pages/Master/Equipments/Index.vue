@@ -1,12 +1,27 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import EquipmentTreeRow from '@/Components/EquipmentTreeRow.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
+import { ref } from 'vue';
 
 const props = defineProps({
-    items: Array,
+    tree: { type: Array, default: () => [] },
 });
 
-function destroy(id) {
+const expandedIds = ref(new Set());
+
+function toggle(id) {
+    const next = new Set(expandedIds.value);
+    if (next.has(id)) {
+        next.delete(id);
+    } else {
+        next.add(id);
+    }
+    expandedIds.value = next;
+}
+
+function destroy(id, event) {
+    event?.stopPropagation();
     if (!confirm('この設備を削除してもよろしいですか？')) return;
     router.delete(route('master.equipments.destroy', id));
 }
@@ -28,15 +43,17 @@ function destroy(id) {
             </div>
         </template>
 
-        <div class="max-w-5xl">
+        <div class="max-w-full">
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-                <div v-if="items.length === 0" class="p-8 text-center text-slate-500">
+                <div v-if="tree.length === 0" class="p-8 text-center text-slate-500">
                     データがありません。
                 </div>
                 <div v-else class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-slate-200">
                         <thead class="bg-slate-50">
                             <tr>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-10"></th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-16">画像</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">ID</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">設備名</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">親設備</th>
@@ -45,17 +62,15 @@ function destroy(id) {
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-slate-200">
-                            <tr v-for="item in items" :key="item.id" class="hover:bg-slate-50">
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{{ item.id }}</td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-800">{{ item.name }}</td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{{ item.parent?.name ?? '—' }}</td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{{ item.status ?? '—' }}</td>
-                                <td class="px-4 py-3 whitespace-nowrap text-right text-sm">
-                                    <Link :href="route('master.equipments.show', item.id)" class="text-slate-600 hover:text-slate-900 mr-3">詳細</Link>
-                                    <Link :href="route('master.equipments.edit', item.id)" class="text-slate-600 hover:text-slate-900 mr-3">編集</Link>
-                                    <button type="button" class="text-red-600 hover:text-red-800" @click="destroy(item.id)">削除</button>
-                                </td>
-                            </tr>
+                            <EquipmentTreeRow
+                                v-for="node in tree"
+                                :key="node.id"
+                                :node="node"
+                                :expanded-ids="expandedIds"
+                                :depth="0"
+                                @toggle="toggle"
+                                @destroy="destroy"
+                            />
                         </tbody>
                     </table>
                 </div>

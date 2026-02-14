@@ -39,10 +39,20 @@ const form = useForm({
                 <form @submit.prevent="form.post(route('master.equipments.store'))" class="space-y-6">
                     <div>
                         <InputLabel value="親設備" />
-                        <select v-model="form.parent_id" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-slate-500 focus:ring-slate-500 text-sm">
+                        <select
+                            v-model="form.parent_id"
+                            class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-slate-500 focus:ring-slate-500 text-sm"
+                        >
                             <option value="">なし</option>
-                            <option v-for="p in parents" :key="p.id" :value="p.id">{{ p.name }}</option>
+                            <option
+                                v-for="p in parents"
+                                :key="p.id"
+                                :value="p.id"
+                            >
+                                {{ p.display_label ?? p.name }}
+                            </option>
                         </select>
+                        <p class="mt-1 text-xs text-slate-500">階層構造で表示されています。子設備はインデントで表示されます。</p>
                         <InputError :message="form.errors.parent_id" />
                     </div>
                     <div>

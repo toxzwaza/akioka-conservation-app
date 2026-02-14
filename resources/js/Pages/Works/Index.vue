@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import Badge from '@/Components/Badge.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import { Head, Link } from '@inertiajs/vue3';
 
@@ -21,7 +22,7 @@ defineProps({
             </div>
         </template>
 
-        <div class="max-w-6xl">
+        <div class="max-w-full">
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-slate-200">
@@ -53,14 +54,14 @@ defineProps({
                                 <td class="px-4 py-3 text-sm text-slate-600">
                                     {{ work.equipment?.name ?? '—' }}
                                 </td>
-                                <td class="px-4 py-3 text-sm text-slate-600">
-                                    {{ work.work_status?.name ?? '—' }}
+                                <td class="px-4 py-3 text-sm">
+                                    <Badge :label="work.work_status?.name ?? '—'" :color="work.work_status?.color" />
                                 </td>
-                                <td class="px-4 py-3 text-sm text-slate-600">
-                                    {{ work.work_priority?.name ?? '—' }}
+                                <td class="px-4 py-3 text-sm">
+                                    <Badge :label="work.work_priority?.name ?? '—'" :color="work.work_priority?.color" />
                                 </td>
-                                <td class="px-4 py-3 text-sm text-slate-600">
-                                    {{ work.assigned_user?.name ?? '—' }}
+                                <td class="px-4 py-3 text-sm">
+                                    <Badge :label="work.assigned_user?.name ?? '—'" :color="work.assigned_user?.color" />
                                 </td>
                                 <td class="px-4 py-3 text-sm text-slate-600">
                                     {{ work.created_at ? new Date(work.created_at).toLocaleDateString('ja-JP') : '—' }}

@@ -16,6 +16,7 @@ class Part extends Model
         'part_no',
         'name',
         'memo',
+        'image_path',
     ];
 
     /**

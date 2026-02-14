@@ -28,7 +28,7 @@ function destroy(id) {
             </div>
         </template>
 
-        <div class="max-w-4xl">
+        <div class="max-w-full">
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <div v-if="items.length === 0" class="p-8 text-center text-slate-500">
                     データがありません。「APIから追加」で別システムから登録できます。
@@ -46,7 +46,9 @@ function destroy(id) {
                         <tbody class="bg-white divide-y divide-slate-200">
                             <tr v-for="item in items" :key="item.id" class="hover:bg-slate-50">
                                 <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{{ item.id }}</td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-800">{{ item.name }}</td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm">
+                                    <Badge :label="item.name ?? '—'" :color="item.color" />
+                                </td>
                                 <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{{ item.email ?? '—' }}</td>
                                 <td class="px-4 py-3 whitespace-nowrap text-right text-sm">
                                     <Link

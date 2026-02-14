@@ -4,6 +4,7 @@ import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
+import { BADGE_COLOR_OPTIONS, toFormColor } from '@/Constants/badgeColors';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -12,6 +13,7 @@ const props = defineProps({
 
 const form = useForm({
     name: props.item.name,
+    color: toFormColor(props.item.color),
     email: props.item.email ?? '',
 });
 </script>
@@ -37,6 +39,18 @@ const form = useForm({
                         <InputLabel value="氏名" />
                         <TextInput v-model="form.name" type="text" class="mt-1 block w-full" required />
                         <InputError :message="form.errors.name" />
+                    </div>
+                    <div>
+                        <InputLabel value="表示色" />
+                        <select
+                            v-model="form.color"
+                            class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-slate-500 focus:ring-slate-500"
+                        >
+                            <option v-for="opt in BADGE_COLOR_OPTIONS" :key="opt.value" :value="opt.value">
+                                {{ opt.label }}
+                            </option>
+                        </select>
+                        <InputError :message="form.errors.color" />
                     </div>
                     <div>
                         <InputLabel value="メールアドレス" />

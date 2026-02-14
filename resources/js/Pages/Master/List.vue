@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import Badge from '@/Components/Badge.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -30,7 +31,7 @@ function destroy(id) {
             </div>
         </template>
 
-        <div class="max-w-4xl">
+        <div class="max-w-full">
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <div v-if="items.length === 0" class="p-8 text-center text-slate-500">
                     データがありません。追加ボタンから登録してください。
@@ -40,7 +41,7 @@ function destroy(id) {
                         <thead class="bg-slate-50">
                             <tr>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">ID</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">表示名</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">表示名・色</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">並び順</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">有効</th>
                                 <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">操作</th>
@@ -49,7 +50,9 @@ function destroy(id) {
                         <tbody class="bg-white divide-y divide-slate-200">
                             <tr v-for="item in items" :key="item.id" class="hover:bg-slate-50">
                                 <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{{ item.id }}</td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-800">{{ item.name }}</td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm">
+                                    <Badge :label="item.name ?? '—'" :color="item.color" />
+                                </td>
                                 <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{{ item.sort_order }}</td>
                                 <td class="px-4 py-3 whitespace-nowrap">
                                     <span

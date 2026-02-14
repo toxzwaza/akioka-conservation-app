@@ -1,9 +1,47 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
+import { ref, watch } from 'vue';
 
-defineProps({
+const props = defineProps({
     item: Object,
+    thumbnailUrl: { type: String, default: null },
+    hasLocalImage: { type: Boolean, default: false },
+});
+
+const imageUploading = ref(false);
+const imageInputRef = ref(null);
+const imageError = ref(false);
+
+function triggerImageUpload() {
+    imageInputRef.value?.click();
+}
+
+function onImageSelected(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('image', file);
+    imageUploading.value = true;
+    router.post(route('master.equipments.image.upload', props.item.id), formData, {
+        forceFormData: true,
+        preserveScroll: true,
+        onFinish: () => {
+            imageUploading.value = false;
+            event.target.value = '';
+        },
+    });
+}
+
+function removeImage() {
+    if (!confirm('アップロードした画像を削除しますか？')) return;
+    router.delete(route('master.equipments.image.destroy', props.item.id), {
+        preserveScroll: true,
+    });
+}
+
+watch(() => props.thumbnailUrl, () => {
+    imageError.value = false;
 });
 </script>
 
@@ -22,7 +60,57 @@ defineProps({
             </div>
         </template>
 
-        <div class="max-w-2xl">
+        <div class="max-w-2xl space-y-6">
+            <!-- 画像 -->
+            <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div class="px-4 py-3 bg-slate-50 border-b border-slate-200">
+                    <h2 class="text-sm font-semibold text-slate-800">画像</h2>
+                </div>
+                <div class="p-4 flex flex-col gap-3">
+                    <div class="w-full aspect-square max-w-40 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shadow-sm">
+                        <img
+                            v-if="thumbnailUrl && !imageError"
+                            :src="thumbnailUrl"
+                            alt="設備画像"
+                            class="w-full h-full object-contain p-1"
+                            @error="imageError = true"
+                        />
+                        <span
+                            v-else
+                            class="text-slate-400 text-xs"
+                        >
+                            画像なし
+                        </span>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5">
+                        <input
+                            ref="imageInputRef"
+                            type="file"
+                            accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+                            class="hidden"
+                            @change="onImageSelected"
+                        />
+                        <button
+                            type="button"
+                            :disabled="imageUploading"
+                            class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                            @click="triggerImageUpload"
+                        >
+                            {{ imageUploading ? 'アップロード中...' : '選択' }}
+                        </button>
+                        <button
+                            v-if="hasLocalImage"
+                            type="button"
+                            :disabled="imageUploading"
+                            class="inline-flex items-center rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 transition-colors"
+                            @click="removeImage"
+                        >
+                            削除
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <dl class="divide-y divide-slate-200">
                     <div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">

@@ -26,7 +26,7 @@ const masterMenus = [
             <h1 class="text-xl font-semibold text-slate-800 tracking-tight">マスタ</h1>
         </template>
 
-        <div class="max-w-4xl">
+        <div class="max-w-full">
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <ul class="divide-y divide-slate-200">
                     <li v-for="menu in masterMenus" :key="menu.key">

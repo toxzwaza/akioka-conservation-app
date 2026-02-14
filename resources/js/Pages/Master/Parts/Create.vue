@@ -86,7 +86,7 @@ function addPart(part) {
             </div>
         </template>
 
-        <div class="max-w-5xl space-y-6">
+        <div class="max-w-full space-y-6">
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
                 <p class="text-sm text-slate-600 mb-4">
                     Conservation API（物品/stocks）から検索して部品を追加します。セレクトで検索対象を選択し、検索値を入力して検索してください。
@@ -176,6 +176,7 @@ function addPart(part) {
                     <table class="min-w-full divide-y divide-slate-200">
                         <thead class="bg-slate-50">
                             <tr>
+                                <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase w-16">画像</th>
                                 <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">ID</th>
                                 <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">品名</th>
                                 <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-slate-500 uppercase">品番</th>
@@ -187,6 +188,24 @@ function addPart(part) {
                         </thead>
                         <tbody class="bg-white divide-y divide-slate-200">
                             <tr v-for="(row, idx) in apiResults" :key="row.external_id || idx" class="hover:bg-slate-50">
+                                <td class="px-4 py-3">
+                                    <div class="relative w-12 h-12 rounded border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center">
+                                        <img
+                                            v-if="row.thumbnail_url && !row._imgError"
+                                            :src="row.thumbnail_url"
+                                            alt=""
+                                            class="w-full h-full object-contain"
+                                            loading="lazy"
+                                            @error="row._imgError = true"
+                                        />
+                                        <span
+                                            v-else
+                                            class="text-slate-400 text-xs"
+                                        >
+                                            —
+                                        </span>
+                                    </div>
+                                </td>
                                 <td class="px-4 py-3 text-sm text-slate-700">{{ row.external_id ?? '—' }}</td>
                                 <td class="px-4 py-3 text-sm text-slate-800">{{ row.name }}</td>
                                 <td class="px-4 py-3 text-sm text-slate-700">{{ row.s_name ?? '—' }}</td>

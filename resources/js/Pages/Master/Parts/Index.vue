@@ -28,7 +28,7 @@ function destroy(id) {
             </div>
         </template>
 
-        <div class="max-w-5xl">
+        <div class="max-w-full">
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <div v-if="items.length === 0" class="p-8 text-center text-slate-500">
                     データがありません。「APIから追加」で別システムから登録できます。

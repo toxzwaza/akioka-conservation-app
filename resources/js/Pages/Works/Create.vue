@@ -6,11 +6,11 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
-import { ref, computed, watch } from 'vue';
+import { ref } from 'vue';
 import axios from 'axios';
 
 const props = defineProps({
-    equipments: Array,
+    equipmentOptions: Array,
     workStatuses: Array,
     workPriorities: Array,
     workPurposes: Array,
@@ -60,50 +60,6 @@ const partSearchQuery = ref('');
 const partSearchResults = ref([]);
 const partSearchLoading = ref(false);
 const partAddQty = ref(1);
-
-// 親設備選択（なし = 親なしの設備のみ、特定ID = その親に紐づく子設備）
-const selectedParentId = ref('');
-
-// 親なしの設備（ルート）のみ
-const rootEquipments = computed(() => (props.equipments || []).filter((e) => !e.parent_id));
-
-// 親セレクトの選択肢: なし + ルート設備
-const parentOptions = computed(() => {
-    const roots = rootEquipments.value;
-    return [{ value: '', label: 'なし' }, ...roots.map((e) => ({ value: String(e.id), label: e.name }))];
-});
-
-// 子セレクトの選択肢: 親が「なし」のときは空、親選択時は「選択された親設備（親なし）＋その子設備」のみ
-const childOptions = computed(() => {
-    if (!selectedParentId.value) return [];
-    const list = props.equipments || [];
-    const parent = list.find((e) => String(e.id) === String(selectedParentId.value));
-    const children = list.filter((e) => e.parent_id == selectedParentId.value);
-    return parent ? [parent, ...children] : children;
-});
-
-// 親を変更したら: 親を選択した場合はその親を設備にデフォルト、それ以外は候補外なら未選択に
-watch(selectedParentId, () => {
-    if (selectedParentId.value) {
-        form.equipment_id = selectedParentId.value;
-        return;
-    }
-    const options = childOptions.value;
-    const stillValid = options.some((e) => String(e.id) === String(form.equipment_id));
-    if (!stillValid) form.equipment_id = '';
-});
-
-// バリデーションエラー等で equipment_id が復元されている場合のみ親を同期（親選択中の上書きを防ぐ）
-watch(
-    () => [props.equipments, form.equipment_id],
-    () => {
-        if (!form.equipment_id || !(props.equipments?.length)) return;
-        if (selectedParentId.value !== '') return; // ユーザーが親を選択中は同期しない
-        const eq = props.equipments.find((e) => String(e.id) === String(form.equipment_id));
-        if (eq) selectedParentId.value = eq.parent_id ? String(eq.parent_id) : '';
-    },
-    { immediate: true }
-);
 
 async function searchParts() {
     partSearchLoading.value = true;
@@ -235,40 +191,24 @@ function submit() {
                             <InputError :message="form.errors.title" />
                         </div>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <InputLabel value="親設備" />
-                                <select
-                                    v-model="selectedParentId"
-                                    class="mt-1 block w-full border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm"
+                        <div>
+                            <InputLabel value="設備" />
+                            <select
+                                v-model="form.equipment_id"
+                                class="mt-1 block w-full border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm"
+                                required
+                            >
+                                <option value="">選択してください</option>
+                                <option
+                                    v-for="opt in equipmentOptions"
+                                    :key="opt.id"
+                                    :value="opt.id"
                                 >
-                                    <option
-                                        v-for="opt in parentOptions"
-                                        :key="opt.value"
-                                        :value="opt.value"
-                                    >
-                                        {{ opt.label }}
-                                    </option>
-                                </select>
-                            </div>
-                            <div>
-                                <InputLabel value="設備" />
-                                <select
-                                    v-model="form.equipment_id"
-                                    class="mt-1 block w-full border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm"
-                                    required
-                                >
-                                    <option value="">選択してください</option>
-                                    <option
-                                        v-for="eq in childOptions"
-                                        :key="eq.id"
-                                        :value="eq.id"
-                                    >
-                                        {{ eq.name }} - 親: {{ eq.parent?.name ?? 'なし' }}
-                                    </option>
-                                </select>
-                                <InputError :message="form.errors.equipment_id" />
-                            </div>
+                                    {{ opt.display_label ?? opt.name }}
+                                </option>
+                            </select>
+                            <p class="mt-1 text-xs text-slate-500">階層構造で表示されています。</p>
+                            <InputError :message="form.errors.equipment_id" />
                         </div>
 
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">

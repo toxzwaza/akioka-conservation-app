@@ -32,7 +32,12 @@ class WorkController extends Controller
      */
     public function index()
     {
-        $works = Work::with(['equipment:id,name', 'workStatus:id,name', 'workPriority:id,name', 'assignedUser:id,name'])
+        $works = Work::with([
+            'equipment:id,name',
+            'workStatus' => fn ($q) => $q->select('id', 'name', 'color'),
+            'workPriority' => fn ($q) => $q->select('id', 'name', 'color'),
+            'assignedUser' => fn ($q) => $q->select('id', 'name', 'color'),
+        ])
             ->orderByDesc('created_at')
             ->paginate(15);
 
@@ -47,16 +52,24 @@ class WorkController extends Controller
     public function show(Work $work, PartDisplayNameService $displayNameService)
     {
         $work->load([
-            'equipment:id,name',
-            'workStatus:id,name',
-            'workPriority:id,name',
-            'workPurpose:id,name',
-            'assignedUser:id,name',
-            'additionalUser:id,name',
-            'workContents' => fn ($q) => $q->with(['workContentTag:id,name', 'repairType:id,name'])->orderBy('id'),
+            'equipment' => fn ($q) => $q->with('parent.parent.parent.parent.parent'),
+            'workStatus' => fn ($q) => $q->select('id', 'name', 'color'),
+            'workPriority' => fn ($q) => $q->select('id', 'name', 'color'),
+            'workPurpose' => fn ($q) => $q->select('id', 'name', 'color'),
+            'assignedUser' => fn ($q) => $q->select('id', 'name', 'color'),
+            'additionalUser' => fn ($q) => $q->select('id', 'name', 'color'),
+            'workContents' => fn ($q) => $q->with([
+                'workContentTag' => fn ($q) => $q->select('id', 'name', 'color'),
+                'repairType' => fn ($q) => $q->select('id', 'name', 'color'),
+            ])->orderBy('id'),
             'workUsedParts' => fn ($q) => $q->with('part:id,part_no,name,external_id')->orderBy('id'),
-            'workCosts' => fn ($q) => $q->with('workCostCategory:id,name')->orderBy('id'),
-            'workActivities' => fn ($q) => $q->with(['user:id,name', 'workActivityType:id,name'])->orderByDesc('created_at'),
+            'workCosts' => fn ($q) => $q->with([
+                'workCostCategory' => fn ($q) => $q->select('id', 'name', 'color'),
+            ])->orderBy('id'),
+            'workActivities' => fn ($q) => $q->with([
+                'user' => fn ($q) => $q->select('id', 'name', 'color'),
+                'workActivityType' => fn ($q) => $q->select('id', 'name', 'color'),
+            ])->orderByDesc('created_at'),
         ]);
 
         $parts = Part::orderBy('part_no')->get();
@@ -73,12 +86,15 @@ class WorkController extends Controller
 
         return Inertia::render('Works/Show', [
             'work' => $work,
-            'workContentTags' => WorkContentTag::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
-            'repairTypes' => RepairType::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
+            'workContentTags' => WorkContentTag::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
+            'repairTypes' => RepairType::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
             'parts' => $partsWithDisplay,
-            'workCostCategories' => WorkCostCategory::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
-            'workStatuses' => WorkStatus::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
-            'users' => User::orderBy('name')->get(['id', 'name']),
+            'workCostCategories' => WorkCostCategory::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
+            'workStatuses' => WorkStatus::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
+            'workPriorities' => WorkPriority::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
+            'workPurposes' => WorkPurpose::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
+            'equipmentOptions' => Equipment::getOptionsForSelect(null),
+            'users' => User::orderBy('name')->get(['id', 'name', 'color']),
         ]);
     }
 
@@ -91,22 +107,15 @@ class WorkController extends Controller
         $partsWithDisplay = $displayNameService->resolveDisplayNames($parts, auth()->user());
 
         return Inertia::render('Works/Create', [
-            'equipments' => Equipment::query()
-                ->select('equipments.id', 'equipments.name', 'equipments.parent_id')
-                ->with('parent:id,name')
-                ->leftJoin('equipments as parent_equipment', 'equipments.parent_id', '=', 'parent_equipment.id')
-                ->orderByRaw('COALESCE(parent_equipment.name, equipments.name)')
-                ->orderByRaw('CASE WHEN equipments.parent_id IS NULL THEN 0 ELSE 1 END')
-                ->orderBy('equipments.name')
-                ->get(),
-            'workStatuses' => WorkStatus::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
-            'workPriorities' => WorkPriority::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
-            'workPurposes' => WorkPurpose::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
-            'workContentTags' => WorkContentTag::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
-            'repairTypes' => RepairType::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
+            'equipmentOptions' => Equipment::getOptionsForSelect(null),
+            'workStatuses' => WorkStatus::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
+            'workPriorities' => WorkPriority::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
+            'workPurposes' => WorkPurpose::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
+            'workContentTags' => WorkContentTag::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
+            'repairTypes' => RepairType::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
             'parts' => $partsWithDisplay,
-            'workCostCategories' => WorkCostCategory::where('is_active', true)->orderBy('sort_order')->get(['id', 'name']),
-            'users' => User::orderBy('name')->get(['id', 'name']),
+            'workCostCategories' => WorkCostCategory::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
+            'users' => User::orderBy('name')->get(['id', 'name', 'color']),
         ]);
     }
 
@@ -431,46 +440,116 @@ class WorkController extends Controller
     }
 
     /**
-     * 作業を更新（ステータス・担当者など）
+     * 作業概要を更新（全項目編集可、変更履歴を記録）
      */
     public function update(Request $request, Work $work)
     {
+        $input = $request->all();
+        foreach (['additional_user_id', 'occurred_at', 'started_at', 'completed_at', 'production_stop_minutes'] as $key) {
+            if (isset($input[$key]) && $input[$key] === '') {
+                $input[$key] = null;
+            }
+        }
+
         $validated = $request->validate([
-            'work_status_id' => ['nullable', 'exists:work_statuses,id'],
-            'assigned_user_id' => ['nullable', 'exists:users,id'],
+            'title' => ['required', 'string', 'max:255'],
+            'equipment_id' => ['required', 'exists:equipments,id'],
+            'work_status_id' => ['required', 'exists:work_statuses,id'],
+            'work_priority_id' => ['required', 'exists:work_priorities,id'],
+            'work_purpose_id' => ['required', 'exists:work_purposes,id'],
+            'assigned_user_id' => ['required', 'exists:users,id'],
             'additional_user_id' => ['nullable', 'exists:users,id'],
+            'production_stop_minutes' => ['nullable', 'integer', 'min:0'],
+            'occurred_at' => ['nullable', 'date'],
+            'started_at' => ['nullable', 'date'],
+            'completed_at' => ['nullable', 'date'],
+            'note' => ['nullable', 'string', 'max:65535'],
         ]);
 
-        $oldStatusId = $work->work_status_id;
-        $oldAssignedId = $work->assigned_user_id;
-        $oldAdditionalId = $work->additional_user_id;
+        foreach (['additional_user_id', 'production_stop_minutes', 'note'] as $k) {
+            if (isset($validated[$k]) && $validated[$k] === '') {
+                $validated[$k] = null;
+            }
+        }
+        foreach (['occurred_at', 'started_at', 'completed_at'] as $k) {
+            if (isset($validated[$k]) && $validated[$k] === '') {
+                $validated[$k] = null;
+            }
+        }
 
         $updateData = [];
-        if (isset($validated['work_status_id']) && (int) ($validated['work_status_id'] ?? 0) !== (int) $oldStatusId) {
-            $updateData['work_status_id'] = $validated['work_status_id'] ?: null;
-        }
-        if (array_key_exists('assigned_user_id', $validated) && (int) ($validated['assigned_user_id'] ?? 0) !== (int) $oldAssignedId) {
-            $updateData['assigned_user_id'] = $validated['assigned_user_id'] ?: null;
-        }
-        if (array_key_exists('additional_user_id', $validated) && (int) ($validated['additional_user_id'] ?? 0) !== (int) $oldAdditionalId) {
-            $updateData['additional_user_id'] = $validated['additional_user_id'] ?: null;
+        $changes = [];
+
+        $fieldConfig = [
+            'title' => ['label' => '作業名', 'format' => fn ($v) => $v ?? '—'],
+            'equipment_id' => [
+                'label' => '設備',
+                'format' => fn ($v) => $v ? (Equipment::find($v)?->name ?? $v) : '—',
+            ],
+            'work_status_id' => [
+                'label' => 'ステータス',
+                'format' => fn ($v) => $v ? (WorkStatus::find($v)?->name ?? $v) : '—',
+            ],
+            'work_priority_id' => [
+                'label' => '優先度',
+                'format' => fn ($v) => $v ? (WorkPriority::find($v)?->name ?? $v) : '—',
+            ],
+            'work_purpose_id' => [
+                'label' => '作業目的',
+                'format' => fn ($v) => $v ? (WorkPurpose::find($v)?->name ?? $v) : '—',
+            ],
+            'assigned_user_id' => [
+                'label' => '主担当',
+                'format' => fn ($v) => $v ? (User::find($v)?->name ?? $v) : '—',
+            ],
+            'additional_user_id' => [
+                'label' => '追加担当',
+                'format' => fn ($v) => $v ? (User::find($v)?->name ?? $v) : '—',
+            ],
+            'production_stop_minutes' => [
+                'label' => '停止時間',
+                'format' => fn ($v) => $v !== null && $v !== '' ? $v . '分' : '—',
+            ],
+            'occurred_at' => [
+                'label' => '発生日',
+                'format' => fn ($v) => $v ? (\Carbon\Carbon::parse($v)->format('Y-m-d H:i')) : '—',
+            ],
+            'started_at' => [
+                'label' => '開始日時',
+                'format' => fn ($v) => $v ? (\Carbon\Carbon::parse($v)->format('Y-m-d H:i')) : '—',
+            ],
+            'completed_at' => [
+                'label' => '完了日時',
+                'format' => fn ($v) => $v ? (\Carbon\Carbon::parse($v)->format('Y-m-d H:i')) : '—',
+            ],
+            'note' => [
+                'label' => '備考',
+                'format' => fn ($v) => $v !== null && $v !== '' ? (strlen($v) > 30 ? substr($v, 0, 30) . '...' : $v) : '—',
+            ],
+        ];
+
+        foreach ($fieldConfig as $key => $config) {
+            $oldVal = $work->getAttribute($key);
+            $newVal = $validated[$key] ?? null;
+            if ($newVal !== null && (string) $newVal === '') {
+                $newVal = in_array($key, ['additional_user_id', 'occurred_at', 'started_at', 'completed_at', 'production_stop_minutes', 'note'], true) ? null : $newVal;
+            }
+            $oldStr = $oldVal instanceof \DateTimeInterface ? $oldVal->format('Y-m-d H:i') : (string) ($oldVal ?? '');
+            $newStr = $newVal instanceof \DateTimeInterface ? \Carbon\Carbon::parse($newVal)->format('Y-m-d H:i') : (string) ($newVal ?? '');
+            if ($oldStr !== $newStr) {
+                $updateData[$key] = $newVal;
+                $oldDisp = $config['format']($oldVal);
+                $newDisp = $config['format']($newVal);
+                $changes[] = $config['label'] . 'を「' . $oldDisp . '」から「' . $newDisp . '」に変更';
+            }
         }
 
         if ($updateData === []) {
             return redirect()->route('work.works.show', $work)->with('status', '変更はありません。');
         }
 
-        if (isset($updateData['work_status_id'])) {
-            $newStatus = WorkStatus::find($updateData['work_status_id']);
-            $oldStatus = WorkStatus::find($oldStatusId);
-            $this->recordWorkActivity($work, 'ステータス変更', sprintf(
-                'ステータスを「%s」から「%s」に変更しました。',
-                $oldStatus?->name ?? '—',
-                $newStatus?->name ?? '—'
-            ));
-        }
-        if (isset($updateData['assigned_user_id']) || isset($updateData['additional_user_id'])) {
-            $this->recordWorkActivity($work, '担当者変更', '担当者を変更しました。');
+        foreach ($changes as $msg) {
+            $this->recordWorkActivity($work, '更新', $msg);
         }
 
         $work->update($updateData);

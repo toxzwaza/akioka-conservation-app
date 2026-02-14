@@ -53,7 +53,7 @@ function addUser(user) {
             </div>
         </template>
 
-        <div class="max-w-5xl space-y-6">
+        <div class="max-w-full space-y-6">
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
                 <p class="text-sm text-slate-600 mb-4">
                     Conservation API から氏名でユーザーを検索し、追加ボタンでUsersに登録します。external_id で連携します。

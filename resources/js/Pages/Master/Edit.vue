@@ -5,6 +5,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import Checkbox from '@/Components/Checkbox.vue';
+import { BADGE_COLOR_OPTIONS, toFormColor } from '@/Constants/badgeColors';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -15,6 +16,7 @@ const props = defineProps({
 
 const form = useForm({
     name: props.item.name,
+    color: toFormColor(props.item.color),
     sort_order: props.item.sort_order ?? 0,
     is_active: props.item.is_active ?? true,
 });
@@ -56,6 +58,18 @@ const form = useForm({
                             required
                         />
                         <InputError :message="form.errors.name" />
+                    </div>
+                    <div>
+                        <InputLabel value="表示色" />
+                        <select
+                            v-model="form.color"
+                            class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-slate-500 focus:ring-slate-500"
+                        >
+                            <option v-for="opt in BADGE_COLOR_OPTIONS" :key="opt.value" :value="opt.value">
+                                {{ opt.label }}
+                            </option>
+                        </select>
+                        <InputError :message="form.errors.color" />
                     </div>
                     <div>
                         <InputLabel value="並び順" />

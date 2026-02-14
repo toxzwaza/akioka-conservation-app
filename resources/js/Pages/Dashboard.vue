@@ -109,7 +109,7 @@ function formatDate(value) {
             </div>
         </template>
 
-        <div class="max-w-6xl space-y-8">
+        <div class="max-w-full space-y-8">
             <!-- セクション1: ステータス別作業件数 -->
             <section>
                 <h2 class="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-500">
