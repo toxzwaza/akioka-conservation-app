@@ -128,6 +128,11 @@ function isFile(obj) {
     return obj != null && typeof File !== 'undefined' && obj instanceof File;
 }
 
+/** File からプレビュー用のオブジェクトURLを取得（テンプレートで URL が undefined になる場合に対応） */
+function getObjectUrl(file) {
+    return isFile(file) && typeof URL !== 'undefined' ? URL.createObjectURL(file) : '';
+}
+
 function setContentImages(e) {
     const files = e.target.files;
     if (!files?.length) return;
@@ -593,7 +598,7 @@ function submitWorkEdit() {
                             <input type="file" accept="image/*" multiple class="mt-1 block w-full text-sm text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-white file:text-sm file:font-medium hover:file:bg-indigo-700" @change="setContentImages" />
                             <div v-if="contentForm.images?.length" class="mt-2 flex flex-wrap gap-2">
                                 <div v-for="(img, imgIdx) in contentForm.images" :key="imgIdx" class="relative inline-block">
-                                    <img v-if="isFile(img)" :src="URL.createObjectURL(img)" alt="プレビュー" class="h-16 w-16 object-cover rounded-lg border-2 border-indigo-200" />
+                                    <img v-if="isFile(img)" :src="getObjectUrl(img)" alt="プレビュー" class="h-16 w-16 object-cover rounded-lg border-2 border-indigo-200" />
                                     <button type="button" class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs leading-none flex items-center justify-center hover:bg-red-600" @click="removeContentImage(imgIdx)">×</button>
                                 </div>
                             </div>
