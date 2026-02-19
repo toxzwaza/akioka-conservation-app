@@ -104,6 +104,66 @@ class Equipment extends Model
     }
 
     /**
+     * 親を持たない設備（ルート）のみをセレクト用に返す
+     *
+     * @return array<int, array{id: int, name: string}>
+     */
+    public static function getRootOptionsForSelect(): array
+    {
+        return self::whereNull('parent_id')
+            ->orderBy('name')
+            ->get(['id', 'name'])
+            ->map(fn ($e) => ['id' => $e->id, 'name' => $e->name])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * 指定親の設備セレクト用オプション（親自身 + 子孫を「└」で階層表示）
+     * 親設備を先頭に含め、続いて子孫を階層表示する
+     *
+     * @return array<int, array{id: int, name: string, display_label: string, depth: int}>
+     */
+    public static function getChildOptionsForSelect(int $parentId): array
+    {
+        $parent = self::find($parentId, ['id', 'name']);
+        if (! $parent) {
+            return [];
+        }
+
+        $all = self::orderBy('name')->get(['id', 'name', 'parent_id']);
+        $byParent = $all->groupBy('parent_id');
+        $children = ($byParent->get($parentId) ?? collect())->sortBy('name')->values();
+
+        $result = [];
+        $result[] = [
+            'id' => $parent->id,
+            'name' => $parent->name,
+            'display_label' => $parent->name,
+            'depth' => 0,
+        ];
+
+        $prefix = '　'; // 全角スペース
+        $flatten = function ($items, int $depth) use (&$flatten, $byParent, &$result, $prefix) {
+            foreach ($items as $item) {
+                $indent = $depth > 0 ? str_repeat($prefix, $depth) . '└ ' : '└ ';
+                $result[] = [
+                    'id' => $item->id,
+                    'name' => $item->name,
+                    'display_label' => $indent . $item->name,
+                    'depth' => $depth,
+                ];
+                $grandChildren = ($byParent->get($item->id) ?? collect())->sortBy('name')->values();
+                $flatten($grandChildren, $depth + 1);
+            }
+        };
+
+        $flatten($children, 1);
+
+        return $result;
+    }
+
+    /**
      * 指定IDの子孫のID一覧を返す（自分自身は含まない）
      *
      * @param  \Illuminate\Support\Collection<int, Equipment>  $equipments

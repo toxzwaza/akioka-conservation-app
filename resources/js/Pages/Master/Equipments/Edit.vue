@@ -70,7 +70,15 @@ const form = useForm({
                     </div>
                     <div>
                         <InputLabel value="設備状態" />
-                        <TextInput v-model="form.status" type="text" class="mt-1 block w-full" required />
+                        <select
+                            v-model="form.status"
+                            class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-slate-500 focus:ring-slate-500 text-sm"
+                            required
+                        >
+                            <option value="稼働中">稼働中</option>
+                            <option value="休止中">休止中</option>
+                            <option value="撤去済み">撤去済み</option>
+                        </select>
                         <InputError :message="form.errors.status" />
                     </div>
                     <div>

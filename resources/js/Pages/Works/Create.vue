@@ -6,11 +6,12 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { ref, computed, watch } from 'vue';
 import axios from 'axios';
 
 const props = defineProps({
-    equipmentOptions: Array,
+    parentEquipmentOptions: Array,
+    equipmentChildrenByParentId: Object,
     workStatuses: Array,
     workPriorities: Array,
     workPurposes: Array,
@@ -22,11 +23,12 @@ const props = defineProps({
 });
 
 const emptyWorkContent = () => ({
-    work_content_tag_id: '',
-    repair_type_id: '',
+    work_content_tag_ids: [],
+    repair_type_ids: [],
     content: '',
     started_at: '',
     ended_at: '',
+    _images: [],
 });
 
 const emptyWorkCost = () => ({
@@ -35,6 +37,11 @@ const emptyWorkCost = () => ({
     vendor_name: '',
     occurred_at: '',
     note: '',
+    _file: null,
+});
+
+const emptySummaryDocument = () => ({
+    display_name: '',
     _file: null,
 });
 
@@ -54,7 +61,46 @@ const form = useForm({
     work_contents: [emptyWorkContent()],
     work_used_parts: [],
     work_costs: [emptyWorkCost()],
+    summary_documents: [emptySummaryDocument()],
 });
+
+const parentEquipmentId = ref('');
+const equipmentOptionsForSelect = computed(() => {
+    if (!parentEquipmentId.value) return [];
+    const map = props.equipmentChildrenByParentId ?? {};
+    return map[parentEquipmentId.value] ?? [];
+});
+
+watch(parentEquipmentId, () => {
+    form.equipment_id = '';
+});
+
+/** 完了ステータスのIDを取得 */
+const completedStatusId = computed(() => {
+    const s = props.workStatuses?.find((x) => x.name === '完了');
+    return s?.id ?? null;
+});
+
+/** 現在日時を datetime-local 形式で返す */
+function nowAsDatetimeLocal() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const h = String(d.getHours()).padStart(2, '0');
+    const min = String(d.getMinutes()).padStart(2, '0');
+    return `${y}-${m}-${day}T${h}:${min}`;
+}
+
+/** ステータスが「完了」に変更されたら完了日時を自動入力 */
+watch(
+    () => form.work_status_id,
+    (newVal) => {
+        if (completedStatusId.value && String(newVal) === String(completedStatusId.value)) {
+            form.completed_at = nowAsDatetimeLocal();
+        }
+    }
+);
 
 const partSearchQuery = ref('');
 const partSearchResults = ref([]);
@@ -108,22 +154,61 @@ function removeWorkCost(index) {
     form.work_costs.splice(index, 1);
 }
 
+function addSummaryDocument() {
+    form.summary_documents.push(emptySummaryDocument());
+}
+
+function removeSummaryDocument(index) {
+    form.summary_documents.splice(index, 1);
+}
+
+function setSummaryDocFile(index, event) {
+    const file = event.target.files?.[0];
+    if (form.summary_documents[index]) form.summary_documents[index]._file = file || null;
+}
+
 function setCostFile(index, event) {
     const file = event.target.files?.[0];
     if (form.work_costs[index]) form.work_costs[index]._file = file || null;
 }
 
+function setContentImages(contentIndex, event) {
+    const files = event.target.files;
+    if (!files?.length || !form.work_contents[contentIndex]) return;
+    const current = form.work_contents[contentIndex]._images || [];
+    form.work_contents[contentIndex]._images = [...current, ...Array.from(files)];
+    event.target.value = '';
+}
+
+function removeContentImage(contentIndex, imageIndex) {
+    const imgs = form.work_contents[contentIndex]?._images || [];
+    imgs.splice(imageIndex, 1);
+    form.work_contents[contentIndex]._images = [...imgs];
+}
+
 function buildFormData() {
     const fd = new FormData();
     const data = form.data();
+    // work_contents は form を直接参照（data() は File を含まないため）
+    const workContents = form.work_contents || [];
+    workContents.forEach((row, i) => {
+        const { _images, work_content_tag_ids, repair_type_ids, ...rest } = row;
+        Object.entries(rest).forEach(([k, v]) => {
+            if (v != null && v !== '') fd.append(`work_contents[${i}][${k}]`, String(v));
+        });
+        (work_content_tag_ids || []).forEach((id) => {
+            if (id != null && id !== '') fd.append(`work_contents[${i}][work_content_tag_ids][]`, String(id));
+        });
+        (repair_type_ids || []).forEach((id) => {
+            if (id != null && id !== '') fd.append(`work_contents[${i}][repair_type_ids][]`, String(id));
+        });
+        (row._images || []).forEach((file) => {
+            if (file instanceof File) fd.append(`work_contents[${i}][images][]`, file);
+        });
+    });
     for (const [key, value] of Object.entries(data)) {
-        if (key === 'work_contents') {
-            (value || []).forEach((row, i) => {
-                Object.entries(row).forEach(([k, v]) => {
-                    if (v != null && v !== '') fd.append(`work_contents[${i}][${k}]`, String(v));
-                });
-            });
-        } else if (key === 'work_used_parts') {
+        if (key === 'work_contents') continue; // 上で処理済み
+        if (key === 'work_used_parts') {
             (value || []).forEach((row, i) => {
                 if (row.part_id == null || row.part_id === '') return;
                 const n = Math.max(1, parseInt(String(row.qty), 10) || 1);
@@ -132,13 +217,21 @@ function buildFormData() {
                 if (row.note != null && row.note !== '') fd.append(`work_used_parts[${i}][note]`, String(row.note));
             });
         } else if (key === 'work_costs') {
-            (value || []).forEach((row, i) => {
+            // _file は form を直接参照（data() は File を含まないため）
+            (form.work_costs || []).forEach((row, i) => {
                 Object.entries(row).forEach(([k, v]) => {
                     if (k === '_file') return;
                     if (v != null && v !== '') fd.append(`work_costs[${i}][${k}]`, String(v));
                 });
                 if (row._file instanceof File) fd.append(`work_costs[${i}][file]`, row._file);
             });
+        } else if (key === 'summary_documents') {
+            (form.summary_documents || [])
+                .filter((row) => row._file instanceof File)
+                .forEach((row, i) => {
+                    fd.append(`summary_documents[${i}][display_name]`, (row.display_name && String(row.display_name).trim()) || row._file.name);
+                    fd.append(`summary_documents[${i}][file]`, row._file);
+                });
         } else if (value != null && value !== '') {
             fd.append(key, String(value));
         }
@@ -155,7 +248,10 @@ function normalizeUsedPartsQty() {
 
 function submit() {
     normalizeUsedPartsQty();
-    const hasFile = form.work_costs.some((row) => row._file);
+    const hasCostFile = form.work_costs.some((row) => row._file);
+    const hasContentImages = form.work_contents.some((row) => row._images?.length);
+    const hasSummaryDocs = form.summary_documents?.some((row) => row._file instanceof File);
+    const hasFile = hasCostFile || hasContentImages || hasSummaryDocs;
     if (hasFile) {
         form.processing = true;
         router.post(route('work.works.store'), buildFormData(), {
@@ -191,24 +287,45 @@ function submit() {
                             <InputError :message="form.errors.title" />
                         </div>
 
-                        <div>
-                            <InputLabel value="設備" />
-                            <select
-                                v-model="form.equipment_id"
-                                class="mt-1 block w-full border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm"
-                                required
-                            >
-                                <option value="">選択してください</option>
-                                <option
-                                    v-for="opt in equipmentOptions"
-                                    :key="opt.id"
-                                    :value="opt.id"
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <InputLabel value="親設備" />
+                                <select
+                                    v-model="parentEquipmentId"
+                                    class="mt-1 block w-full border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm"
+                                    required
                                 >
-                                    {{ opt.display_label ?? opt.name }}
-                                </option>
-                            </select>
-                            <p class="mt-1 text-xs text-slate-500">階層構造で表示されています。</p>
-                            <InputError :message="form.errors.equipment_id" />
+                                    <option value="">選択してください</option>
+                                    <option
+                                        v-for="opt in parentEquipmentOptions"
+                                        :key="opt.id"
+                                        :value="String(opt.id)"
+                                    >
+                                        {{ opt.name }}
+                                    </option>
+                                </select>
+                                <InputError :message="form.errors.equipment_id" />
+                            </div>
+                            <div>
+                                <InputLabel value="設備" />
+                                <select
+                                    v-model="form.equipment_id"
+                                    class="mt-1 block w-full border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm"
+                                    required
+                                    :disabled="!parentEquipmentId"
+                                >
+                                    <option value="">{{ parentEquipmentId ? '選択してください' : '親設備を先に選択' }}</option>
+                                    <option
+                                        v-for="opt in equipmentOptionsForSelect"
+                                        :key="opt.id"
+                                        :value="opt.id"
+                                    >
+                                        {{ opt.display_label ?? opt.name }}
+                                    </option>
+                                </select>
+                                <p class="mt-1 text-xs text-slate-500">└ で階層表示</p>
+                                <InputError :message="form.errors.equipment_id" />
+                            </div>
                         </div>
 
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -282,7 +399,7 @@ function submit() {
                                         :key="u.id"
                                         :value="u.id"
                                     >
-                                        {{ u.name }}
+                                        {{ u.api_name ?? u.name }}
                                     </option>
                                 </select>
                                 <InputError :message="form.errors.assigned_user_id" />
@@ -299,7 +416,7 @@ function submit() {
                                         :key="u.id"
                                         :value="u.id"
                                     >
-                                        {{ u.name }}
+                                        {{ u.api_name ?? u.name }}
                                     </option>
                                 </select>
                                 <InputError :message="form.errors.additional_user_id" />
@@ -357,6 +474,51 @@ function submit() {
                             <InputError :message="form.errors.note" />
                         </div>
 
+                        <!-- 作業添付資料（PDF, Excel, Word, 画像） -->
+                        <div class="border-t border-slate-200 pt-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <h2 class="text-sm font-semibold text-slate-800">作業添付資料</h2>
+                                <SecondaryButton type="button" @click="addSummaryDocument">
+                                    行を追加
+                                </SecondaryButton>
+                            </div>
+                            <p class="text-xs text-slate-500 mb-4">PDF、Excel、Word、画像を登録できます。名前を入力すると、作業詳細でタグとして表示されます。</p>
+                            <div
+                                v-for="(row, index) in form.summary_documents"
+                                :key="index"
+                                class="mb-4 p-4 rounded-lg border border-slate-200 bg-slate-50/50 flex flex-wrap items-end gap-4"
+                            >
+                                <div class="flex-1 min-w-[180px]">
+                                    <InputLabel value="表示名（タグ名）" />
+                                    <TextInput
+                                        v-model="row.display_name"
+                                        type="text"
+                                        class="mt-1 block w-full"
+                                        placeholder="例: 取扱マニュアル"
+                                    />
+                                    <InputError :message="form.errors[`summary_documents.${index}.display_name`]" />
+                                </div>
+                                <div class="flex-1 min-w-[200px]">
+                                    <InputLabel value="ファイル" />
+                                    <input
+                                        type="file"
+                                        :accept="'.pdf,.xlsx,.xls,.docx,.doc,.jpg,.jpeg,.png,.gif,.webp'"
+                                        class="mt-1 block w-full text-sm text-slate-600 file:mr-4 file:rounded-md file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+                                        @change="setSummaryDocFile(index, $event)"
+                                    />
+                                    <p v-if="row._file" class="mt-1 text-xs text-slate-500">{{ row._file.name }}</p>
+                                    <InputError :message="form.errors[`summary_documents.${index}.file`]" />
+                                </div>
+                                <button
+                                    type="button"
+                                    class="text-xs text-slate-500 hover:text-red-600"
+                                    @click="removeSummaryDocument(index)"
+                                >
+                                    削除
+                                </button>
+                            </div>
+                        </div>
+
                         <!-- 作業内容登録 -->
                         <div class="border-t border-slate-200 pt-6">
                             <div class="flex items-center justify-between mb-4">
@@ -381,38 +543,42 @@ function submit() {
                                 </div>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
-                                        <InputLabel value="作業タグ" />
-                                        <select
-                                            v-model="row.work_content_tag_id"
-                                            class="mt-1 block w-full border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm"
-                                        >
-                                            <option value="">選択</option>
-                                            <option
+                                        <InputLabel value="作業タグ（複数選択可）" />
+                                        <div class="mt-1 flex flex-wrap gap-2 p-2 rounded-md border border-gray-300 bg-white min-h-[38px]">
+                                            <label
                                                 v-for="t in workContentTags"
                                                 :key="t.id"
-                                                :value="t.id"
+                                                class="inline-flex items-center gap-1.5 cursor-pointer"
                                             >
-                                                {{ t.name }}
-                                            </option>
-                                        </select>
-                                        <InputError :message="form.errors[`work_contents.${index}.work_content_tag_id`]" />
+                                                <input
+                                                    type="checkbox"
+                                                    :value="t.id"
+                                                    v-model="row.work_content_tag_ids"
+                                                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                                />
+                                                <span class="text-sm">{{ t.name }}</span>
+                                            </label>
+                                        </div>
+                                        <InputError :message="form.errors[`work_contents.${index}.work_content_tag_ids`]" />
                                     </div>
                                     <div>
-                                        <InputLabel value="修理内容" />
-                                        <select
-                                            v-model="row.repair_type_id"
-                                            class="mt-1 block w-full border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm"
-                                        >
-                                            <option value="">選択</option>
-                                            <option
+                                        <InputLabel value="修理内容（複数選択可）" />
+                                        <div class="mt-1 flex flex-wrap gap-2 p-2 rounded-md border border-gray-300 bg-white min-h-[38px]">
+                                            <label
                                                 v-for="r in repairTypes"
                                                 :key="r.id"
-                                                :value="r.id"
+                                                class="inline-flex items-center gap-1.5 cursor-pointer"
                                             >
-                                                {{ r.name }}
-                                            </option>
-                                        </select>
-                                        <InputError :message="form.errors[`work_contents.${index}.repair_type_id`]" />
+                                                <input
+                                                    type="checkbox"
+                                                    :value="r.id"
+                                                    v-model="row.repair_type_ids"
+                                                    class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                                />
+                                                <span class="text-sm">{{ r.name }}</span>
+                                            </label>
+                                        </div>
+                                        <InputError :message="form.errors[`work_contents.${index}.repair_type_ids`]" />
                                     </div>
                                 </div>
                                 <div>
@@ -424,6 +590,39 @@ function submit() {
                                         placeholder="作業内容を入力"
                                     />
                                     <InputError :message="form.errors[`work_contents.${index}.content`]" />
+                                </div>
+                                <div>
+                                    <InputLabel value="添付画像（複数登録可）" />
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        multiple
+                                        class="mt-1 block w-full text-sm text-slate-600 file:mr-4 file:rounded-md file:border-0 file:bg-slate-100 file:px-4 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+                                        @change="setContentImages(index, $event)"
+                                    />
+                                    <div v-if="row._images?.length" class="mt-2 flex flex-wrap gap-2">
+                                        <div
+                                            v-for="(img, imgIdx) in row._images"
+                                            :key="imgIdx"
+                                            class="relative inline-block"
+                                        >
+                                            <img
+                                                v-if="img instanceof File"
+                                                :src="URL.createObjectURL(img)"
+                                                alt="プレビュー"
+                                                class="h-20 w-20 object-cover rounded border border-slate-200"
+                                            />
+                                            <button
+                                                type="button"
+                                                class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs leading-none flex items-center justify-center hover:bg-red-600"
+                                                @click="removeContentImage(index, imgIdx)"
+                                            >
+                                                ×
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p class="mt-1 text-xs text-slate-500">JPEG, PNG, GIF など（1枚10MBまで）</p>
+                                    <InputError :message="form.errors[`work_contents.${index}.images`]" />
                                 </div>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>

@@ -2,16 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AttachmentType;
 use App\Models\Equipment;
 use App\Models\Part;
 use App\Models\User;
 use App\Models\Work;
 use App\Models\WorkActivity;
 use App\Models\WorkActivityType;
+use App\Models\WorkAttachment;
 use App\Models\WorkContent;
 use App\Models\WorkContentTag;
 use App\Models\WorkCost;
 use App\Services\PartDisplayNameService;
+use App\Services\StockAdditionService;
 use App\Services\StockDeductionService;
 use App\Models\WorkCostCategory;
 use App\Models\WorkPriority;
@@ -58,10 +61,12 @@ class WorkController extends Controller
             'workPurpose' => fn ($q) => $q->select('id', 'name', 'color'),
             'assignedUser' => fn ($q) => $q->select('id', 'name', 'color'),
             'additionalUser' => fn ($q) => $q->select('id', 'name', 'color'),
+            'summaryDocuments',
             'workContents' => fn ($q) => $q->with([
-                'workContentTag' => fn ($q) => $q->select('id', 'name', 'color'),
-                'repairType' => fn ($q) => $q->select('id', 'name', 'color'),
-            ])->orderBy('id'),
+                'workContentTags' => fn ($q) => $q->select('work_content_tags.id', 'name', 'color'),
+                'repairTypes' => fn ($q) => $q->select('repair_types.id', 'name', 'color'),
+                'workAttachments' => fn ($q) => $q->orderBy('id'),
+            ])->orderByDesc('created_at'),
             'workUsedParts' => fn ($q) => $q->with('part:id,part_no,name,external_id')->orderBy('id'),
             'workCosts' => fn ($q) => $q->with([
                 'workCostCategory' => fn ($q) => $q->select('id', 'name', 'color'),
@@ -84,6 +89,18 @@ class WorkController extends Controller
             }
         }
 
+        // workUsedParts に単価を付与（external_id あり部品は API から取得）
+        $externalIds = $work->workUsedParts->map(fn ($wup) => $wup->part?->external_id)->filter()->unique()->values()->all();
+        $priceMap = $this->fetchStockPrices($externalIds);
+        foreach ($work->workUsedParts as $wup) {
+            if ($wup->part?->external_id) {
+                $price = $priceMap[(string) $wup->part->external_id] ?? null;
+                $wup->setAttribute('unit_price', $price);
+            } else {
+                $wup->setAttribute('unit_price', null);
+            }
+        }
+
         return Inertia::render('Works/Show', [
             'work' => $work,
             'workContentTags' => WorkContentTag::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
@@ -93,9 +110,37 @@ class WorkController extends Controller
             'workStatuses' => WorkStatus::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
             'workPriorities' => WorkPriority::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
             'workPurposes' => WorkPurpose::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
-            'equipmentOptions' => Equipment::getOptionsForSelect(null),
-            'users' => User::orderBy('name')->get(['id', 'name', 'color']),
+            'parentEquipmentOptions' => Equipment::getRootOptionsForSelect(),
+            'equipmentChildrenByParentId' => self::buildEquipmentChildrenByParentId(),
+            'users' => self::getUsersForSelect(),
         ]);
+    }
+
+    /**
+     * 担当者選択用ユーザー取得（external_id ありは API の氏名を付与）
+     *
+     * @return \Illuminate\Support\Collection<int, object{id: int, name: string, color: string|null, api_name?: string}>
+     */
+    private static function getUsersForSelect()
+    {
+        $users = User::orderBy('sort_order')->orderBy('id')->get(['id', 'name', 'color', 'external_id']);
+        $baseUrl = rtrim(config('services.conservation_api.base_url', ''), '/');
+
+        foreach ($users as $user) {
+            if ($user->external_id && $baseUrl) {
+                try {
+                    $response = Http::timeout(5)->get($baseUrl . '/users/' . $user->external_id);
+                    if ($response->successful()) {
+                        $api = $response->json();
+                        $user->api_name = $api['name'] ?? null;
+                    }
+                } catch (\Throwable $e) {
+                    // API 取得失敗時は DB の name をそのまま使用
+                }
+            }
+        }
+
+        return $users;
     }
 
     /**
@@ -107,7 +152,8 @@ class WorkController extends Controller
         $partsWithDisplay = $displayNameService->resolveDisplayNames($parts, auth()->user());
 
         return Inertia::render('Works/Create', [
-            'equipmentOptions' => Equipment::getOptionsForSelect(null),
+            'parentEquipmentOptions' => Equipment::getRootOptionsForSelect(),
+            'equipmentChildrenByParentId' => self::buildEquipmentChildrenByParentId(),
             'workStatuses' => WorkStatus::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
             'workPriorities' => WorkPriority::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
             'workPurposes' => WorkPurpose::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
@@ -115,8 +161,24 @@ class WorkController extends Controller
             'repairTypes' => RepairType::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
             'parts' => $partsWithDisplay,
             'workCostCategories' => WorkCostCategory::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
-            'users' => User::orderBy('name')->get(['id', 'name', 'color']),
+            'users' => self::getUsersForSelect(),
         ]);
+    }
+
+    /**
+     * 各ルート設備IDをキーに、子設備オプションをマップする
+     * Inertia/JS で equipmentChildrenByParentId[parentId] として利用
+     *
+     * @return array<string, array<int, array{id: int, name: string, display_label: string, depth: int}>>
+     */
+    private static function buildEquipmentChildrenByParentId(): array
+    {
+        $roots = Equipment::getRootOptionsForSelect();
+        $map = [];
+        foreach ($roots as $root) {
+            $map[(string) $root['id']] = Equipment::getChildOptionsForSelect($root['id']);
+        }
+        return $map;
     }
 
     /**
@@ -242,6 +304,70 @@ class WorkController extends Controller
     }
 
     /**
+     * 部品の単価取得（API 連携部品の external_id から価格を取得）
+     */
+    public function getPartPrice(Part $part)
+    {
+        if (! $part->external_id) {
+            return response()->json(['price' => null]);
+        }
+        $baseUrl = rtrim(config('services.conservation_api.base_url', ''), '/');
+        $url = $baseUrl . '/stocks?ids=' . $part->external_id . '&per_page=1';
+        try {
+            $response = Http::timeout(5)->get($url);
+            if (! $response->successful()) {
+                return response()->json(['price' => null]);
+            }
+            $data = $response->json();
+            $items = $data['data'] ?? [];
+            $row = is_array($items) && count($items) > 0 ? $items[0] : null;
+            $price = $row && isset($row['price']) ? (float) $row['price'] : null;
+            return response()->json(['price' => $price]);
+        } catch (\Throwable $e) {
+            return response()->json(['price' => null]);
+        }
+    }
+
+    /**
+     * API から stocks の単価を一括取得
+     *
+     * @param  array<int|string>  $externalIds
+     * @return array<string, float|null>
+     */
+    private function fetchStockPrices(array $externalIds): array
+    {
+        if ($externalIds === []) {
+            return [];
+        }
+        $ids = implode(',', array_map('strval', $externalIds));
+        $baseUrl = rtrim(config('services.conservation_api.base_url'), '/');
+        $url = $baseUrl . '/stocks?ids=' . $ids . '&per_page=100';
+        try {
+            $response = Http::timeout(10)->get($url);
+            if (! $response->successful()) {
+                return [];
+            }
+            $data = $response->json();
+            $rows = $data['data'] ?? [];
+            if (! is_array($rows)) {
+                return [];
+            }
+            $map = [];
+            foreach ($rows as $row) {
+                $id = $row['id'] ?? null;
+                if ($id === null) {
+                    continue;
+                }
+                $price = isset($row['price']) ? (float) $row['price'] : null;
+                $map[(string) $id] = $price;
+            }
+            return $map;
+        } catch (\Throwable $e) {
+            return [];
+        }
+    }
+
+    /**
      * 部品検索用: API から stocks の stock_storages（格納先・アドレス・数量）を一括取得
      *
      * @param  array<int|string>  $externalIds
@@ -322,11 +448,15 @@ class WorkController extends Controller
             'completed_at' => ['nullable', 'date'],
             'note' => ['nullable', 'string'],
             'work_contents' => ['nullable', 'array'],
-            'work_contents.*.work_content_tag_id' => ['nullable', 'exists:work_content_tags,id'],
-            'work_contents.*.repair_type_id' => ['nullable', 'exists:repair_types,id'],
+            'work_contents.*.work_content_tag_ids' => ['nullable', 'array'],
+            'work_contents.*.work_content_tag_ids.*' => ['exists:work_content_tags,id'],
+            'work_contents.*.repair_type_ids' => ['nullable', 'array'],
+            'work_contents.*.repair_type_ids.*' => ['exists:repair_types,id'],
             'work_contents.*.content' => ['nullable', 'string'],
             'work_contents.*.started_at' => ['nullable', 'date'],
             'work_contents.*.ended_at' => ['nullable', 'date'],
+            'work_contents.*.images' => ['nullable', 'array'],
+            'work_contents.*.images.*' => ['nullable', 'file', 'image', 'max:10240'], // 10MB per image
             'work_used_parts' => ['nullable', 'array'],
             'work_used_parts.*.part_id' => ['nullable', 'exists:parts,id'],
             'work_used_parts.*.qty' => ['nullable', 'integer', 'min:1'],
@@ -338,27 +468,81 @@ class WorkController extends Controller
             'work_costs.*.occurred_at' => ['nullable', 'date'],
             'work_costs.*.note' => ['nullable', 'string'],
             'work_costs.*.file' => ['nullable', 'file', 'max:10240'], // 10MB
+            'summary_documents' => ['nullable', 'array'],
+            'summary_documents.*.display_name' => ['nullable', 'string', 'max:255'],
+            'summary_documents.*.file' => ['nullable', 'file', 'mimes:pdf,xlsx,xls,docx,doc,jpg,jpeg,png,gif,webp', 'max:20480'], // 20MB
         ];
 
         $validated = validator($input, $workRules)->validate();
 
-        $workData = collect($validated)->except(['work_contents', 'work_used_parts', 'work_costs'])->all();
+        $workData = collect($validated)->except(['work_contents', 'work_used_parts', 'work_costs', 'summary_documents'])->all();
         $work = Work::create($workData);
 
+        $photoAttachmentType = AttachmentType::where('name', '写真')->first();
+        $photoTypeId = $photoAttachmentType?->id;
+
         $workContents = $request->input('work_contents', []);
-        foreach ($workContents as $item) {
-            $tagId = $item['work_content_tag_id'] ?? null;
-            $repairId = $item['repair_type_id'] ?? null;
+        foreach ($workContents as $index => $item) {
+            $tagIds = $item['work_content_tag_ids'] ?? [];
+            $repairIds = $item['repair_type_ids'] ?? [];
             $content = trim((string) ($item['content'] ?? ''));
-            if ($tagId && $repairId && $content !== '') {
-                WorkContent::create([
+            $tagIds = array_filter(array_map('intval', is_array($tagIds) ? $tagIds : []));
+            $repairIds = array_filter(array_map('intval', is_array($repairIds) ? $repairIds : []));
+
+            if ($content !== '' && (count($tagIds) > 0 || count($repairIds) > 0)) {
+                $wc = WorkContent::create([
                     'work_id' => $work->id,
-                    'work_content_tag_id' => $tagId,
-                    'repair_type_id' => $repairId,
                     'content' => $content,
                     'started_at' => isset($item['started_at']) && $item['started_at'] !== '' ? $item['started_at'] : null,
                     'ended_at' => isset($item['ended_at']) && $item['ended_at'] !== '' ? $item['ended_at'] : null,
                 ]);
+                $wc->workContentTags()->sync($tagIds);
+                $wc->repairTypes()->sync($repairIds);
+
+                // 作業内容の添付画像（複数）
+                if ($photoTypeId) {
+                    $files = $request->file("work_contents.{$index}.images");
+                    $files = is_array($files) ? $files : ($files ? [$files] : []);
+                    foreach ($files as $file) {
+                        if ($file && $file->isValid()) {
+                            $dir = 'work_attachments/' . $work->id;
+                            $name = Str::uuid() . '_' . $file->getClientOriginalName();
+                            $path = $file->storeAs($dir, $name, 'public');
+                            WorkAttachment::create([
+                                'work_id' => $work->id,
+                                'work_content_id' => $wc->id,
+                                'attachment_type_id' => $photoTypeId,
+                                'path' => $path,
+                                'original_name' => $file->getClientOriginalName(),
+                                'uploaded_by' => auth()->id(),
+                            ]);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 作業添付資料（PDF, Excel, Word, 画像）
+        $docType = AttachmentType::where('name', 'マニュアル')->first();
+        if ($docType) {
+            $summaryDocs = $request->input('summary_documents', []);
+            $summaryDocs = is_array($summaryDocs) ? $summaryDocs : [];
+            foreach ($summaryDocs as $idx => $item) {
+                $file = $request->file("summary_documents.{$idx}.file");
+                if ($file && $file->isValid()) {
+                    $dir = 'work_attachments/' . $work->id;
+                    $name = Str::uuid() . '_' . $file->getClientOriginalName();
+                    $path = $file->storeAs($dir, $name, 'public');
+                    WorkAttachment::create([
+                        'work_id' => $work->id,
+                        'work_content_id' => null,
+                        'attachment_type_id' => $docType->id,
+                        'path' => $path,
+                        'original_name' => $file->getClientOriginalName(),
+                        'display_name' => isset($item['display_name']) && trim((string) $item['display_name']) !== '' ? trim($item['display_name']) : $file->getClientOriginalName(),
+                        'uploaded_by' => auth()->id(),
+                    ]);
+                }
             }
         }
 
@@ -576,19 +760,57 @@ class WorkController extends Controller
     }
 
     /**
-     * 作業内容を1件追加
+     * 作業内容を1件追加（複数タグ・複数修理内容・複数画像対応）
      */
     public function storeWorkContent(Request $request, Work $work)
     {
         $validated = $request->validate([
-            'work_content_tag_id' => ['required', 'exists:work_content_tags,id'],
-            'repair_type_id' => ['required', 'exists:repair_types,id'],
+            'work_content_tag_ids' => ['nullable', 'array'],
+            'work_content_tag_ids.*' => ['exists:work_content_tags,id'],
+            'repair_type_ids' => ['nullable', 'array'],
+            'repair_type_ids.*' => ['exists:repair_types,id'],
             'content' => ['required', 'string'],
             'started_at' => ['nullable', 'date'],
             'ended_at' => ['nullable', 'date'],
+            'images' => ['nullable', 'array'],
+            'images.*' => ['nullable', 'file', 'image', 'max:10240'],
         ]);
-        $validated['work_id'] = $work->id;
-        WorkContent::create($validated);
+
+        $tagIds = array_filter(array_map('intval', $validated['work_content_tag_ids'] ?? []));
+        $repairIds = array_filter(array_map('intval', $validated['repair_type_ids'] ?? []));
+        if (count($tagIds) === 0 && count($repairIds) === 0) {
+            return redirect()->back()->withErrors(['work_content_tag_ids' => '作業タグまたは修理内容を1つ以上選択してください。']);
+        }
+
+        $wc = WorkContent::create([
+            'work_id' => $work->id,
+            'content' => $validated['content'],
+            'started_at' => $validated['started_at'] ?? null,
+            'ended_at' => $validated['ended_at'] ?? null,
+        ]);
+        $wc->workContentTags()->sync($tagIds);
+        $wc->repairTypes()->sync($repairIds);
+
+        $photoType = AttachmentType::where('name', '写真')->first();
+        if ($photoType) {
+            $files = $request->file('images') ?? [];
+            foreach (is_array($files) ? $files : [] as $file) {
+                if ($file && $file->isValid()) {
+                    $dir = 'work_attachments/' . $work->id;
+                    $name = Str::uuid() . '_' . $file->getClientOriginalName();
+                    $path = $file->storeAs($dir, $name, 'public');
+                    WorkAttachment::create([
+                        'work_id' => $work->id,
+                        'work_content_id' => $wc->id,
+                        'attachment_type_id' => $photoType->id,
+                        'path' => $path,
+                        'original_name' => $file->getClientOriginalName(),
+                        'uploaded_by' => auth()->id(),
+                    ]);
+                }
+            }
+        }
+
         $this->recordWorkActivity($work, 'その他', '作業内容を追加しました。');
         return redirect()->route('work.works.show', $work)->with('status', '作業内容を追加しました。');
     }
@@ -623,6 +845,34 @@ class WorkController extends Controller
     }
 
     /**
+     * 使用部品を1件削除（external_id ありの場合は在庫加算を実行）
+     */
+    public function destroyWorkUsedPart(Work $work, WorkUsedPart $workUsedPart, StockAdditionService $additionService)
+    {
+        if ($workUsedPart->work_id !== $work->id) {
+            abort(404);
+        }
+
+        $part = $workUsedPart->part;
+        $qty = (int) $workUsedPart->qty;
+
+        $message = '使用部品を削除しました。';
+        if ($part && $part->external_id && $qty >= 1) {
+            $result = $additionService->addBatch([
+                ['part_id' => $part->id, 'external_id' => $part->external_id, 'qty' => $qty],
+            ]);
+            if (isset($result['message']) && $result['message'] !== '') {
+                $message .= ' ' . $result['message'];
+            }
+        }
+
+        $workUsedPart->delete();
+        $this->recordWorkActivity($work, 'その他', '使用部品を削除しました。');
+
+        return redirect()->route('work.works.show', $work)->with('status', $message);
+    }
+
+    /**
      * 費用を1件追加（添付ファイル可）
      */
     public function storeWorkCost(Request $request, Work $work)
@@ -647,6 +897,40 @@ class WorkController extends Controller
         WorkCost::create($validated);
         $this->recordWorkActivity($work, 'その他', '費用を追加しました。');
         return redirect()->route('work.works.show', $work)->with('status', '費用を追加しました。');
+    }
+
+    /**
+     * 作業添付資料を追加（PDF, Excel, Word, 画像）
+     */
+    public function storeWorkSummaryDocument(Request $request, Work $work)
+    {
+        $validated = $request->validate([
+            'display_name' => ['nullable', 'string', 'max:255'],
+            'file' => ['required', 'file', 'mimes:pdf,xlsx,xls,docx,doc,jpg,jpeg,png,gif,webp', 'max:20480'],
+        ]);
+
+        $docType = AttachmentType::where('name', 'マニュアル')->first();
+        if (! $docType) {
+            return redirect()->back()->withErrors(['file' => '添付種別が見つかりません。']);
+        }
+
+        $file = $request->file('file');
+        $dir = 'work_attachments/' . $work->id;
+        $name = Str::uuid() . '_' . $file->getClientOriginalName();
+        $path = $file->storeAs($dir, $name, 'public');
+
+        WorkAttachment::create([
+            'work_id' => $work->id,
+            'work_content_id' => null,
+            'attachment_type_id' => $docType->id,
+            'path' => $path,
+            'original_name' => $file->getClientOriginalName(),
+            'display_name' => isset($validated['display_name']) && trim((string) $validated['display_name']) !== '' ? trim($validated['display_name']) : $file->getClientOriginalName(),
+            'uploaded_by' => auth()->id(),
+        ]);
+
+        $this->recordWorkActivity($work, 'その他', '作業概要に資料を追加しました。');
+        return redirect()->route('work.works.show', $work)->with('status', '資料を追加しました。');
     }
 
     /**

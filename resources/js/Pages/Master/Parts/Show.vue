@@ -6,7 +6,8 @@ import { computed, ref, watch } from 'vue';
 const props = defineProps({
     item: Object,
     apiDetail: Object,
-    allEquipments: { type: Array, default: () => [] },
+    parentEquipmentOptions: { type: Array, default: () => [] },
+    equipmentChildrenByParentId: { type: Object, default: () => ({}) },
     thumbnailUrl: { type: String, default: null },
     hasLocalImage: { type: Boolean, default: false },
 });
@@ -78,11 +79,21 @@ function submitMemo() {
     });
 }
 
-// 設備紐づけ
+// 設備紐づけ（作業登録と同様の親設備→子設備の2段構成）
 const linkedEquipments = computed(() => props.item.equipments ?? []);
+const parentEquipmentId = ref('');
+const equipmentOptionsForSelect = computed(() => {
+    if (!parentEquipmentId.value) return [];
+    const map = props.equipmentChildrenByParentId ?? {};
+    return map[parentEquipmentId.value] ?? [];
+});
 const equipmentOptions = computed(() => {
     const linkedIds = linkedEquipments.value.map((e) => e.id);
-    return (props.allEquipments ?? []).filter((e) => !linkedIds.includes(e.id));
+    return equipmentOptionsForSelect.value.filter((e) => !linkedIds.includes(e.id));
+});
+
+watch(parentEquipmentId, () => {
+    equipmentAttachForm.equipment_id = '';
 });
 
 const equipmentAttachForm = useForm({
@@ -422,35 +433,63 @@ function removeImage() {
                         </li>
                     </ul>
                     <p v-else class="text-sm text-slate-500">紐づけている設備はありません。</p>
-                    <form v-if="equipmentOptions.length" @submit.prevent="submitAttachEquipment" class="flex flex-wrap items-end gap-2">
-                        <div class="min-w-[200px] flex-1">
-                            <label class="block text-xs font-medium text-slate-600 mb-1">設備を追加</label>
-                            <select
-                                v-model="equipmentAttachForm.equipment_id"
-                                class="block w-full rounded-md border-slate-300 shadow-sm focus:border-slate-500 focus:ring-slate-500 text-sm"
+                    <form v-if="parentEquipmentOptions.length" @submit.prevent="submitAttachEquipment" class="space-y-4">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-600 mb-1">親設備</label>
+                                <select
+                                    v-model="parentEquipmentId"
+                                    class="block w-full rounded-md border-slate-300 shadow-sm focus:border-slate-500 focus:ring-slate-500 text-sm"
+                                >
+                                    <option value="">選択してください</option>
+                                    <option
+                                        v-for="opt in parentEquipmentOptions"
+                                        :key="opt.id"
+                                        :value="String(opt.id)"
+                                    >
+                                        {{ opt.name }}
+                                    </option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-600 mb-1">設備</label>
+                                <select
+                                    v-model="equipmentAttachForm.equipment_id"
+                                    class="block w-full rounded-md border-slate-300 shadow-sm focus:border-slate-500 focus:ring-slate-500 text-sm"
+                                    :disabled="!parentEquipmentId"
+                                >
+                                    <option value="">{{ parentEquipmentId ? '選択してください' : '親設備を先に選択' }}</option>
+                                    <option
+                                        v-for="e in equipmentOptions"
+                                        :key="e.id"
+                                        :value="String(e.id)"
+                                    >
+                                        {{ e.display_label ?? e.name }}
+                                    </option>
+                                </select>
+                                <p class="mt-1 text-xs text-slate-500">└ で階層表示</p>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-end gap-2">
+                            <div class="min-w-[160px] flex-1">
+                                <label class="block text-xs font-medium text-slate-600 mb-1">メモ（任意）</label>
+                                <input
+                                    v-model="equipmentAttachForm.note"
+                                    type="text"
+                                    placeholder="例: 標準装備"
+                                    class="block w-full rounded-md border-slate-300 shadow-sm focus:border-slate-500 focus:ring-slate-500 text-sm"
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                :disabled="equipmentAttachForm.processing || !equipmentAttachForm.equipment_id"
+                                class="inline-flex items-center rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
                             >
-                                <option value="">選択してください</option>
-                                <option v-for="e in equipmentOptions" :key="e.id" :value="e.id">{{ e.name }}</option>
-                            </select>
+                                追加
+                            </button>
                         </div>
-                        <div class="min-w-[160px] flex-1">
-                            <label class="block text-xs font-medium text-slate-600 mb-1">メモ（任意）</label>
-                            <input
-                                v-model="equipmentAttachForm.note"
-                                type="text"
-                                placeholder="例: 標準装備"
-                                class="block w-full rounded-md border-slate-300 shadow-sm focus:border-slate-500 focus:ring-slate-500 text-sm"
-                            />
-                        </div>
-                        <button
-                            type="submit"
-                            :disabled="equipmentAttachForm.processing || !equipmentAttachForm.equipment_id"
-                            class="inline-flex items-center rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-                        >
-                            追加
-                        </button>
                     </form>
-                    <p v-else-if="allEquipments?.length" class="text-sm text-slate-500">すべての設備を紐づけ済みです。</p>
+                    <p v-else class="text-sm text-slate-500">設備が登録されていません。</p>
                 </div>
             </div>
                 </div>

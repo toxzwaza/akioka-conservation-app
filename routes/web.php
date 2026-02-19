@@ -31,10 +31,13 @@ Route::middleware('auth')->group(function () {
 // 作業関係 /work
 Route::middleware(['auth', 'verified'])->prefix('work')->name('work.')->group(function () {
     Route::get('parts/search', [WorkController::class, 'searchParts'])->name('parts.search');
+    Route::get('parts/{part}/price', [WorkController::class, 'getPartPrice'])->name('parts.price');
     Route::resource('works', WorkController::class)->only(['index', 'create', 'store', 'show', 'update']);
     Route::post('works/{work}/work-contents', [WorkController::class, 'storeWorkContent'])->name('works.work-contents.store');
     Route::post('works/{work}/work-used-parts', [WorkController::class, 'storeWorkUsedPart'])->name('works.work-used-parts.store');
+    Route::delete('works/{work}/work-used-parts/{workUsedPart}', [WorkController::class, 'destroyWorkUsedPart'])->name('works.work-used-parts.destroy');
     Route::post('works/{work}/work-costs', [WorkController::class, 'storeWorkCost'])->name('works.work-costs.store');
+    Route::post('works/{work}/summary-documents', [WorkController::class, 'storeWorkSummaryDocument'])->name('works.summary-documents.store');
     Route::post('works/{work}/comments', [WorkController::class, 'storeComment'])->name('works.comments.store');
     Route::put('works/{work}/comments/{activity}', [WorkController::class, 'updateComment'])->name('works.comments.update');
     Route::delete('works/{work}/comments/{activity}', [WorkController::class, 'destroyComment'])->name('works.comments.destroy');

@@ -67,19 +67,15 @@ class WorkContentSeeder extends Seeder
             }
 
             foreach ($contents as $c) {
-                WorkContent::firstOrCreate(
+                $wc = WorkContent::firstOrCreate(
                     [
-                        'work_id'              => $work->id,
-                        'work_content_tag_id'  => $tag->id,
-                        'repair_type_id'       => $repairType->id,
-                        'content'              => $c['content'],
+                        'work_id'   => $work->id,
+                        'content'   => $c['content'],
                     ],
-                    array_merge($c, [
-                        'work_id'             => $work->id,
-                        'work_content_tag_id' => $tag->id,
-                        'repair_type_id'      => $repairType->id,
-                    ])
+                    array_merge($c, ['work_id' => $work->id])
                 );
+                $wc->workContentTags()->syncWithoutDetaching([$tag->id]);
+                $wc->repairTypes()->syncWithoutDetaching([$repairType->id]);
             }
         }
     }

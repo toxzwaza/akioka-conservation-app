@@ -19,9 +19,9 @@ class UserSeeder extends Seeder
         $password = Hash::make('password');
 
         $users = [
-            ['external_id' => 91, 'name' => '管理者', 'email' => 'admin@example.com'],
-            ['external_id' => 22, 'name' => '設備保全USER', 'email' => 'user22@example.com'],
-            ['external_id' => 143, 'name' => '設備保全USER', 'email' => 'user143@example.com'],
+            ['external_id' => 91, 'name' => '管理者', 'email' => 'admin@example.com', 'sort_order' => 1],
+            ['external_id' => 22, 'name' => '設備保全USER', 'email' => 'user22@example.com', 'sort_order' => 2],
+            ['external_id' => 143, 'name' => '設備保全USER', 'email' => 'user143@example.com', 'sort_order' => 3],
         ];
 
         foreach ($users as $user) {
@@ -32,6 +32,7 @@ class UserSeeder extends Seeder
                     'email' => $user['email'],
                     'password' => $password,
                     'email_verified_at' => $now,
+                    'sort_order' => $user['sort_order'] ?? 0,
                 ]
             );
         }

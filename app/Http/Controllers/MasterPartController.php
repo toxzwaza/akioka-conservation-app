@@ -178,8 +178,6 @@ class MasterPartController extends Controller
             }
         }
 
-        $allEquipments = Equipment::orderBy('name')->get(['id', 'name']);
-
         $baseUrl = rtrim(config('services.conservation_api.base_url'), '/');
         $siteRoot = preg_replace('#/api$#', '', $baseUrl) ?: $baseUrl;
         $apiThumbnailUrl = $apiDetail ? $this->resolveThumbnailUrl($apiDetail, $siteRoot) : null;
@@ -191,7 +189,8 @@ class MasterPartController extends Controller
         return Inertia::render('Master/Parts/Show', [
             'item' => $item,
             'apiDetail' => $apiDetail,
-            'allEquipments' => $allEquipments,
+            'parentEquipmentOptions' => Equipment::getRootOptionsForSelect(),
+            'equipmentChildrenByParentId' => self::buildEquipmentChildrenByParentId(),
             'thumbnailUrl' => $thumbnailUrl,
             'hasLocalImage' => (bool) $part->image_path,
         ]);
@@ -269,6 +268,22 @@ class MasterPartController extends Controller
         $part->equipments()->detach($equipmentId);
 
         return back()->with('success', '設備の紐づけを解除しました。');
+    }
+
+    /**
+     * 各ルート設備IDをキーに、子設備オプションをマップする
+     * 作業登録と同様の親設備→子設備の2段構成用
+     *
+     * @return array<string, array<int, array{id: int, name: string, display_label: string, depth: int}>>
+     */
+    private static function buildEquipmentChildrenByParentId(): array
+    {
+        $roots = Equipment::getRootOptionsForSelect();
+        $map = [];
+        foreach ($roots as $root) {
+            $map[(string) $root['id']] = Equipment::getChildOptionsForSelect($root['id']);
+        }
+        return $map;
     }
 
     /**

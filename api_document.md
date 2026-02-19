@@ -419,7 +419,104 @@ curl -X POST "https://example.com/api/stock-storages/subtract" \
 
 ---
 
-### 3.2 在庫数量の上書き（棚卸）
+### 3.2 在庫数量の加算
+
+減算の取り消し（例: 使用部品登録の削除）用途で、指定した格納先の数量に指定数量を**加算**します。
+
+| 項目 | 内容 |
+|------|------|
+| **メソッド** | POST |
+| **URL** | `/api/stock-storages/add` |
+| **Body** | JSON（単体オブジェクト または 配列） |
+
+#### リクエスト Body（JSON）
+
+**単体で1件だけ加算する場合**
+
+```json
+{
+  "stock_storage_id": 10,
+  "quantity": 5
+}
+```
+
+- **stock_storage_id**（必須）: 在庫格納先の ID（`stock_storages.id`）
+- **quantity**（必須）: 加算する数量（1以上の整数）
+
+**複数件を一度に加算する場合**
+
+```json
+[
+  { "stock_storage_id": 10, "quantity": 5 },
+  { "stock_storage_id": 11, "quantity": 3 }
+]
+```
+
+配列の要素は上記と同じ形式です。先頭から順に処理されます。
+
+#### リクエスト例
+
+```bash
+# 単体
+curl -X POST "https://example.com/api/stock-storages/add" \
+  -H "Content-Type: application/json" \
+  -d '{"stock_storage_id": 10, "quantity": 5}'
+
+# 複数
+curl -X POST "https://example.com/api/stock-storages/add" \
+  -H "Content-Type: application/json" \
+  -d '[{"stock_storage_id": 10, "quantity": 5}, {"stock_storage_id": 11, "quantity": 3}]'
+```
+
+#### レスポンス例（200 OK・全件成功）
+
+```json
+{
+  "results": [
+    {
+      "index": 0,
+      "success": true,
+      "stock_storage_id": 10,
+      "previous_quantity": 95,
+      "added": 5,
+      "new_quantity": 100
+    }
+  ]
+}
+```
+
+#### レスポンス例（207 Multi-Status・一部失敗）
+
+バリデーションエラーや例外がある場合、該当要素だけ `success: false` となり、HTTP ステータスは **207** になります。
+
+```json
+{
+  "results": [
+    {
+      "index": 0,
+      "success": true,
+      "stock_storage_id": 10,
+      "previous_quantity": 95,
+      "added": 5,
+      "new_quantity": 100
+    },
+    {
+      "index": 1,
+      "success": false,
+      "error": "validation message"
+    }
+  ]
+}
+```
+
+#### エラー（レスポンス内）
+
+- **success: false** の要素: `error` に理由が入ります。
+- Body が配列でもオブジェクトでもない場合: **422** で `{"message": "Invalid request body"}` を返します。
+
+---
+
+### 3.3 在庫数量の上書き（棚卸）
 
 棚卸で実地数量を反映するための API です。指定した格納先の数量を、指定した数値で**上書き**します。
 
@@ -588,6 +685,7 @@ GET /api/users?name=太郎&per_page=20
    - 複数ID取得: `GET /api/stocks?ids=1,2,3` で指定したIDの物品をまとめて取得（有効なもののみ）。  
    - 1件: `GET /api/stocks/{id}` で在庫格納先・取引先・別名をまとめて取得。  
    - 在庫減算: 出庫時に `POST /api/stock-storages/subtract` で `stock_storage_id` と数量を送る。  
+   - 在庫加算: 減算の取り消し（例: 使用部品削除）時に `POST /api/stock-storages/add` で `stock_storage_id` と数量を送る。  
    - 棚卸: 実地数量を `PUT /api/stock-storages/{id}` の `quantity` で上書き。
 
 3. **ユーザーの利用**  

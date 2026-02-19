@@ -1,9 +1,16 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import Badge from '@/Components/Badge.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 
 const props = defineProps({
     items: Array,
+});
+
+/** 表示用：外部IDがあればAPI情報、なければDBの値を表示 */
+const displayItem = (item) => ({
+    name: item.api_name ?? item.name ?? '—',
+    email: item.api_email ?? item.email ?? '—',
 });
 
 function destroy(id) {
@@ -38,6 +45,7 @@ function destroy(id) {
                         <thead class="bg-slate-50">
                             <tr>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">ID</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">並び順</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">氏名</th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">メールアドレス</th>
                                 <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">操作</th>
@@ -46,10 +54,11 @@ function destroy(id) {
                         <tbody class="bg-white divide-y divide-slate-200">
                             <tr v-for="item in items" :key="item.id" class="hover:bg-slate-50">
                                 <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{{ item.id }}</td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{{ item.sort_order ?? 0 }}</td>
                                 <td class="px-4 py-3 whitespace-nowrap text-sm">
-                                    <Badge :label="item.name ?? '—'" :color="item.color" />
+                                    <Badge :label="displayItem(item).name" :color="item.color" />
                                 </td>
-                                <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{{ item.email ?? '—' }}</td>
+                                <td class="px-4 py-3 whitespace-nowrap text-sm text-slate-600">{{ displayItem(item).email }}</td>
                                 <td class="px-4 py-3 whitespace-nowrap text-right text-sm">
                                     <Link
                                         :href="route('master.users.show', item.id)"

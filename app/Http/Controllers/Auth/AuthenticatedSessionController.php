@@ -19,7 +19,7 @@ class AuthenticatedSessionController extends Controller
     public function create(): Response
     {
         return Inertia::render('Auth/Login', [
-            'users' => User::orderBy('name')->get(['id', 'name', 'email']),
+            'users' => User::orderBy('sort_order')->orderBy('id')->get(['id', 'name', 'email']),
         ]);
     }
 

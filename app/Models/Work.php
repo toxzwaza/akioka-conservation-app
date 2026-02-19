@@ -98,6 +98,14 @@ class Work extends Model
     }
 
     /**
+     * 作業添付資料（work_content_id が null の添付：PDF, Excel, Word, 画像など）
+     */
+    public function summaryDocuments(): HasMany
+    {
+        return $this->hasMany(WorkAttachment::class)->whereNull('work_content_id')->orderBy('id');
+    }
+
+    /**
      * 使用部品
      */
     public function workUsedParts(): HasMany

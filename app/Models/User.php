@@ -22,6 +22,7 @@ class User extends Authenticatable
         'external_id',
         'name',
         'color',
+        'sort_order',
         'email',
         'password',
     ];

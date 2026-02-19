@@ -14,6 +14,7 @@ const props = defineProps({
 const form = useForm({
     name: props.item.name,
     color: toFormColor(props.item.color),
+    sort_order: props.item.sort_order ?? 0,
     email: props.item.email ?? '',
 });
 </script>
@@ -51,6 +52,16 @@ const form = useForm({
                             </option>
                         </select>
                         <InputError :message="form.errors.color" />
+                    </div>
+                    <div>
+                        <InputLabel value="並び順" />
+                        <TextInput
+                            v-model.number="form.sort_order"
+                            type="number"
+                            min="0"
+                            class="mt-1 block w-full"
+                        />
+                        <InputError :message="form.errors.sort_order" />
                     </div>
                     <div>
                         <InputLabel value="メールアドレス" />

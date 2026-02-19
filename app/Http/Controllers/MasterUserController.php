@@ -11,11 +11,28 @@ use Inertia\Inertia;
 class MasterUserController extends Controller
 {
     /**
-     * 一覧表示
+     * 一覧表示（external_id があるユーザーは API から取得した情報を付与）
      */
     public function index()
     {
-        $items = User::orderBy('id')->get();
+        $items = User::orderBy('sort_order')->orderBy('id')->get();
+        $baseUrl = rtrim(config('services.conservation_api.base_url', ''), '/');
+
+        foreach ($items as $item) {
+            if ($item->external_id && $baseUrl) {
+                try {
+                    $url = $baseUrl . '/users/' . $item->external_id;
+                    $response = Http::timeout(5)->get($url);
+                    if ($response->successful()) {
+                        $api = $response->json();
+                        $item->api_name = $api['name'] ?? null;
+                        $item->api_email = $api['email'] ?? null;
+                    }
+                } catch (\Throwable $e) {
+                    // API 取得失敗時は DB の値のまま
+                }
+            }
+        }
 
         return Inertia::render('Master/Users/Index', [
             'items' => $items,
@@ -99,11 +116,13 @@ class MasterUserController extends Controller
             return redirect()->route('master.users.create')->with('error', 'このユーザーは既に登録されています。');
         }
 
+        $maxSortOrder = (int) User::max('sort_order');
         User::create([
             'external_id' => $validated['external_id'],
             'name'        => $validated['name'],
             'email'       => null,
             'password'    => null,
+            'sort_order'  => $maxSortOrder + 1,
         ]);
 
         return redirect()->route('master.users.index')->with('success', 'ユーザーを追加しました。');
@@ -160,16 +179,19 @@ class MasterUserController extends Controller
         $colorRules = ['nullable', 'string', \Illuminate\Validation\Rule::in($allowedColors)];
 
         $validated = $request->validate([
-            'name'  => ['required', 'string', 'max:255'],
-            'color' => $colorRules,
-            'email' => ['nullable', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            'name'       => ['required', 'string', 'max:255'],
+            'color'      => $colorRules,
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+            'email'      => ['nullable', 'string', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
         ], [], [
-            'name'  => '氏名',
-            'color' => '表示色',
-            'email' => 'メールアドレス',
+            'name'       => '氏名',
+            'color'      => '表示色',
+            'sort_order' => '並び順',
+            'email'      => 'メールアドレス',
         ]);
 
         $validated['color'] = ! empty(trim($validated['color'] ?? '')) ? trim($validated['color']) : null;
+        $validated['sort_order'] = (int) ($validated['sort_order'] ?? 0);
         $user->update($validated);
 
         return redirect()->route('master.users.show', $user->id)->with('success', 'ユーザーを更新しました。');

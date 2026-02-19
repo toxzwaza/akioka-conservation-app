@@ -78,6 +78,10 @@ const display = computed(() => {
                         <dd class="mt-1 text-sm text-slate-900 sm:mt-0 sm:col-span-2">{{ display.email }}</dd>
                     </div>
                     <div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                        <dt class="text-sm font-medium text-slate-500">並び順</dt>
+                        <dd class="mt-1 text-sm text-slate-900 sm:mt-0 sm:col-span-2">{{ item.sort_order ?? 0 }}</dd>
+                    </div>
+                    <div class="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                         <dt class="text-sm font-medium text-slate-500">所属</dt>
                         <dd class="mt-1 text-sm text-slate-900 sm:mt-0 sm:col-span-2">{{ display.group }}</dd>
                     </div>

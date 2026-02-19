@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class RepairType extends Model
 {
@@ -22,10 +22,10 @@ class RepairType extends Model
     ];
 
     /**
-     * 作業内容
+     * 作業内容（複数）
      */
-    public function workContents(): HasMany
+    public function workContents(): BelongsToMany
     {
-        return $this->hasMany(WorkContent::class, 'repair_type_id');
+        return $this->belongsToMany(WorkContent::class, 'work_content_repair_type');
     }
 }
