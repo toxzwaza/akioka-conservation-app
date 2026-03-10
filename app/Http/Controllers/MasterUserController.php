@@ -11,28 +11,11 @@ use Inertia\Inertia;
 class MasterUserController extends Controller
 {
     /**
-     * 一覧表示（external_id があるユーザーは API から取得した情報を付与）
+     * 一覧表示（DB の値のみ表示。API 取得は詳細画面で実施）
      */
     public function index()
     {
         $items = User::orderBy('sort_order')->orderBy('id')->get();
-        $baseUrl = rtrim(config('services.conservation_api.base_url', ''), '/');
-
-        foreach ($items as $item) {
-            if ($item->external_id && $baseUrl) {
-                try {
-                    $url = $baseUrl . '/users/' . $item->external_id;
-                    $response = Http::timeout(5)->get($url);
-                    if ($response->successful()) {
-                        $api = $response->json();
-                        $item->api_name = $api['name'] ?? null;
-                        $item->api_email = $api['email'] ?? null;
-                    }
-                } catch (\Throwable $e) {
-                    // API 取得失敗時は DB の値のまま
-                }
-            }
-        }
 
         return Inertia::render('Master/Users/Index', [
             'items' => $items,

@@ -17,10 +17,10 @@ function onReorder() {
     router.put(route('master.users.reorder'), { order }, { preserveScroll: true });
 }
 
-/** 表示用：外部IDがあればAPI情報、なければDBの値を表示 */
+/** 表示用：DB の値を表示（API 取得は詳細画面のみ） */
 const displayItem = (item) => ({
-    name: item.api_name ?? item.name ?? '—',
-    email: item.api_email ?? item.email ?? '—',
+    name: item.name ?? '—',
+    email: item.email ?? '—',
 });
 
 function destroy(id) {
