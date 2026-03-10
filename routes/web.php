@@ -53,7 +53,7 @@ Route::middleware(['auth', 'verified'])->prefix('analysis')->name('analysis.')->
     Route::get('/work-volume', [AnalysisController::class, 'workVolume'])->name('work-volume');
     Route::get('/cost', [AnalysisController::class, 'cost'])->name('cost');
     Route::get('/equipment', [AnalysisController::class, 'equipment'])->name('equipment');
-    Route::get('/users', [AnalysisController::class, 'users'])->name('users');
+    Route::get('/user-stats', [AnalysisController::class, 'users'])->name('users');
     Route::get('/parts', [AnalysisController::class, 'parts'])->name('parts');
     Route::get('/vendors', [AnalysisController::class, 'vendors'])->name('vendors');
     Route::get('/repair-trends', [AnalysisController::class, 'repairTrends'])->name('repair-trends');

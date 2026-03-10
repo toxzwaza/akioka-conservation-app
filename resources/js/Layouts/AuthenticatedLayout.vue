@@ -92,6 +92,8 @@ const isAnalysisChildActive = (key) => {
     const segments = path.split('/').filter(Boolean);
     if (segments[0] !== 'analysis') return false;
     if (segments.length <= 1) return key === 'index';
+    // users は /analysis/user-stats で表示
+    if (key === 'users') return segments[1] === 'user-stats';
     return segments[1] === key;
 };
 
@@ -154,7 +156,7 @@ const breadcrumbs = computed(() => {
             'work-volume': '作業量分析',
             cost: '費用分析',
             equipment: '設備分析',
-            users: '担当者分析',
+            'user-stats': '担当者分析',
             parts: '部品使用分析',
             vendors: '業者分析',
             'repair-trends': '修理傾向分析',

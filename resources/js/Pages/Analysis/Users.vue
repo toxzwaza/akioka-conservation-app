@@ -20,11 +20,8 @@ const props = defineProps({
         <div class="max-w-full space-y-8">
             <section>
                 <div class="mb-4 flex flex-wrap items-center justify-between gap-4">
-                <div>
-                    <h1 class="text-2xl font-bold tracking-tight text-slate-900">担当者分析</h1>
-                    <p class="mt-2 text-sm text-slate-500">担当者ごとの作業負荷・完了状況・応答性</p>
-                </div>
-                <AnalysisPeriodFilter
+                    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500">担当者分析</h2>
+                    <AnalysisPeriodFilter
                     :from="from"
                     :to="to"
                     :preset="preset"
@@ -38,13 +35,13 @@ const props = defineProps({
                         <table class="min-w-full">
                             <thead class="bg-slate-50">
                                 <tr>
-                                    <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500">担当者</th>
-                                    <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500">作業数</th>
-                                    <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500">完了数</th>
-                                    <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-500">平均完了日数</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-600">担当者</th>
+                                    <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-600">作業数</th>
+                                    <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-600">完了数</th>
+                                    <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-slate-600">平均完了日数</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-slate-100">
+                            <tbody class="divide-y divide-slate-200 bg-white">
                                 <tr
                                     v-for="row in userStats"
                                     :key="row.id"
@@ -69,6 +66,7 @@ const props = defineProps({
                     </div>
                 </AnalysisTableCard>
             </AnalysisSection>
+        </section>
         </div>
     </AuthenticatedLayout>
 </template>
