@@ -40,19 +40,6 @@ function addUser(user) {
     <Head title="ユーザー - APIから追加" />
 
     <AuthenticatedLayout>
-        <template #header>
-            <div class="flex flex-wrap items-center gap-2">
-                <Link
-                    :href="route('master.users.index')"
-                    class="text-slate-600 hover:text-slate-900 text-sm"
-                >
-                    ← ユーザー一覧
-                </Link>
-                <span class="text-slate-400">/</span>
-                <h1 class="text-xl font-semibold text-slate-800 tracking-tight">ユーザー - APIから追加</h1>
-            </div>
-        </template>
-
         <div class="max-w-full space-y-6">
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
                 <p class="text-sm text-slate-600 mb-4">

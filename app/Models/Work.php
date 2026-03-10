@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -14,31 +15,37 @@ class Work extends Model
 
     protected $fillable = [
         'title',
-        'equipment_id',
         'work_status_id',
         'work_priority_id',
-        'work_purpose_id',
         'assigned_user_id',
-        'additional_user_id',
         'production_stop_minutes',
         'occurred_at',
-        'started_at',
         'completed_at',
         'note',
     ];
 
     protected $casts = [
         'occurred_at' => 'datetime',
-        'started_at' => 'datetime',
         'completed_at' => 'datetime',
     ];
 
     /**
-     * 設備
+     * 設備（複数、代表は先頭）
      */
-    public function equipment(): BelongsTo
+    public function equipments(): BelongsToMany
     {
-        return $this->belongsTo(Equipment::class);
+        return $this->belongsToMany(Equipment::class, 'work_equipment')
+            ->withPivot('sort_order')
+            ->orderByPivot('sort_order')
+            ->orderByPivot('equipment_id');
+    }
+
+    /**
+     * 代表設備（互換用、equipments の先頭1件）
+     */
+    public function getEquipmentAttribute(): ?Equipment
+    {
+        return $this->relationLoaded('equipments') ? $this->equipments->first() : $this->equipments()->first();
     }
 
     /**
@@ -58,11 +65,20 @@ class Work extends Model
     }
 
     /**
-     * 作業目的
+     * 作業目的（複数）
      */
-    public function workPurpose(): BelongsTo
+    public function workPurposes(): BelongsToMany
     {
-        return $this->belongsTo(WorkPurpose::class, 'work_purpose_id');
+        return $this->belongsToMany(WorkPurpose::class, 'work_work_purpose')
+            ->orderByPivot('work_purpose_id');
+    }
+
+    /**
+     * 代表作業目的（互換用、workPurposes の先頭1件）
+     */
+    public function getWorkPurposeAttribute(): ?WorkPurpose
+    {
+        return $this->relationLoaded('workPurposes') ? $this->workPurposes->first() : $this->workPurposes()->first();
     }
 
     /**
@@ -74,11 +90,22 @@ class Work extends Model
     }
 
     /**
-     * 追加担当
+     * 追加担当（複数）
      */
-    public function additionalUser(): BelongsTo
+    public function additionalUsers(): BelongsToMany
     {
-        return $this->belongsTo(User::class, 'additional_user_id');
+        return $this->belongsToMany(User::class, 'work_additional_user', 'work_id', 'user_id')
+            ->withPivot('sort_order')
+            ->orderByPivot('sort_order')
+            ->orderByPivot('user_id');
+    }
+
+    /**
+     * 代表追加担当（互換用、additionalUsers の先頭1件）
+     */
+    public function getAdditionalUserAttribute(): ?User
+    {
+        return $this->relationLoaded('additionalUsers') ? $this->additionalUsers->first() : $this->additionalUsers()->first();
     }
 
     /**

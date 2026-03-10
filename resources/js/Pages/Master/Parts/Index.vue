@@ -16,19 +16,16 @@ function destroy(id) {
     <Head title="部品" />
 
     <AuthenticatedLayout>
-        <template #header>
-            <div class="flex flex-wrap items-center justify-between gap-2">
-                <h1 class="text-xl font-semibold text-slate-800 tracking-tight">部品</h1>
+        <div class="max-w-full space-y-4">
+            <div class="flex justify-end">
                 <Link
                     :href="route('master.parts.create')"
-                    class="inline-flex items-center rounded-lg bg-slate-800 px-3 py-2 text-center text-sm font-medium text-white hover:bg-slate-700"
+                    class="inline-flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-center text-sm font-medium text-white hover:bg-slate-700"
                 >
+                    <PlusIcon />
                     APIから追加
                 </Link>
             </div>
-        </template>
-
-        <div class="max-w-full">
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <div v-if="items.length === 0" class="p-8 text-center text-slate-500">
                     データがありません。「APIから追加」で別システムから登録できます。

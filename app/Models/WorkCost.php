@@ -13,7 +13,9 @@ class WorkCost extends Model
     protected $fillable = [
         'work_id',
         'work_cost_category_id',
+        'name',
         'amount',
+        'vendor_id',
         'vendor_name',
         'occurred_at',
         'note',
@@ -38,5 +40,13 @@ class WorkCost extends Model
     public function workCostCategory(): BelongsTo
     {
         return $this->belongsTo(WorkCostCategory::class, 'work_cost_category_id');
+    }
+
+    /**
+     * 業者
+     */
+    public function vendor(): BelongsTo
+    {
+        return $this->belongsTo(Vendor::class);
     }
 }

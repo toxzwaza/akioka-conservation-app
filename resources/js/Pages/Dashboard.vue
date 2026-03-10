@@ -2,7 +2,6 @@
 import { computed } from 'vue';
 import VueApexCharts from 'vue3-apexcharts';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
 import { Head, Link } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -100,15 +99,6 @@ function formatDate(value) {
     <Head title="ダッシュボード" />
 
     <AuthenticatedLayout>
-        <template #header>
-            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <h1 class="text-xl font-semibold text-slate-800 tracking-tight">ダッシュボード</h1>
-                <Link :href="route('work.works.create')">
-                    <PrimaryButton>作業新規登録</PrimaryButton>
-                </Link>
-            </div>
-        </template>
-
         <div class="max-w-full space-y-8">
             <!-- セクション1: ステータス別作業件数 -->
             <section>

@@ -40,6 +40,29 @@ class MasterUserController extends Controller
     }
 
     /**
+     * 並び順の変更（ドラッグ＆ドロップ用）
+     */
+    public function reorder(Request $request)
+    {
+        $validated = $request->validate([
+            'order'   => ['required', 'array'],
+            'order.*' => ['required', 'integer'],
+        ]);
+
+        $ids = $validated['order'];
+        $exists = User::whereIn('id', $ids)->pluck('id')->toArray();
+        if (count($exists) !== count($ids) || count(array_diff($ids, $exists)) > 0) {
+            abort(422, 'Invalid order: one or more IDs do not exist.');
+        }
+
+        foreach ($ids as $sort => $id) {
+            User::where('id', $id)->update(['sort_order' => $sort]);
+        }
+
+        return redirect()->route('master.users.index')->with('success', 'ユーザーの並び順を更新しました。');
+    }
+
+    /**
      * 新規追加画面（API検索フォーム）
      */
     public function create()

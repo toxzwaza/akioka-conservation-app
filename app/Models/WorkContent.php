@@ -14,6 +14,7 @@ class WorkContent extends Model
 
     protected $fillable = [
         'work_id',
+        'display_order',
         'content',
         'started_at',
         'ended_at',
@@ -30,6 +31,11 @@ class WorkContent extends Model
     public function work(): BelongsTo
     {
         return $this->belongsTo(Work::class);
+    }
+
+    protected static function booted(): void
+    {
+        static::addGlobalScope('order', fn ($q) => $q->orderBy('display_order')->orderBy('id'));
     }
 
     /**

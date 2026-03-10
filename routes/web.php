@@ -5,6 +5,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\MasterController;
 use App\Http\Controllers\MasterEquipmentController;
 use App\Http\Controllers\MasterPartController;
+use App\Http\Controllers\MasterVendorController;
 use App\Http\Controllers\MasterUserController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\WorkController;
@@ -33,6 +34,8 @@ Route::middleware(['auth', 'verified'])->prefix('work')->name('work.')->group(fu
     Route::get('parts/search', [WorkController::class, 'searchParts'])->name('parts.search');
     Route::get('parts/{part}/price', [WorkController::class, 'getPartPrice'])->name('parts.price');
     Route::resource('works', WorkController::class)->only(['index', 'create', 'store', 'show', 'update']);
+    Route::put('works/{work}/complete', [WorkController::class, 'complete'])->name('works.complete');
+    Route::put('works/{work}/work-contents/reorder', [WorkController::class, 'reorderWorkContents'])->name('works.work-contents.reorder');
     Route::post('works/{work}/work-contents', [WorkController::class, 'storeWorkContent'])->name('works.work-contents.store');
     Route::post('works/{work}/work-used-parts', [WorkController::class, 'storeWorkUsedPart'])->name('works.work-used-parts.store');
     Route::delete('works/{work}/work-used-parts/{workUsedPart}', [WorkController::class, 'destroyWorkUsedPart'])->name('works.work-used-parts.destroy');
@@ -58,6 +61,7 @@ Route::middleware(['auth', 'verified'])->prefix('master')->name('master.')->grou
 
     // ユーザーマスタ（API検索→登録）
     Route::get('users', [MasterUserController::class, 'index'])->name('users.index');
+    Route::put('users/reorder', [MasterUserController::class, 'reorder'])->name('users.reorder');
     Route::get('users/create', [MasterUserController::class, 'create'])->name('users.create');
     Route::post('users/search', [MasterUserController::class, 'searchApi'])->name('users.search');
     Route::post('users', [MasterUserController::class, 'store'])->name('users.store');
@@ -91,7 +95,17 @@ Route::middleware(['auth', 'verified'])->prefix('master')->name('master.')->grou
     Route::put('equipments/{id}', [MasterEquipmentController::class, 'update'])->whereNumber('id')->name('equipments.update');
     Route::delete('equipments/{id}', [MasterEquipmentController::class, 'destroy'])->whereNumber('id')->name('equipments.destroy');
 
+    // 業者マスタ
+    Route::get('vendors', [MasterVendorController::class, 'index'])->name('vendors.index');
+    Route::put('vendors/reorder', [MasterVendorController::class, 'reorder'])->name('vendors.reorder');
+    Route::get('vendors/create', [MasterVendorController::class, 'create'])->name('vendors.create');
+    Route::post('vendors', [MasterVendorController::class, 'store'])->name('vendors.store');
+    Route::get('vendors/{id}/edit', [MasterVendorController::class, 'edit'])->whereNumber('id')->name('vendors.edit');
+    Route::put('vendors/{id}', [MasterVendorController::class, 'update'])->whereNumber('id')->name('vendors.update');
+    Route::delete('vendors/{id}', [MasterVendorController::class, 'destroy'])->whereNumber('id')->name('vendors.destroy');
+
     $masterKeys = 'work-statuses|work-priorities|work-purposes|work-content-tags|repair-types|attachment-types|work-activity-types|work-cost-categories';
+    Route::put('/{masterKey}/reorder', [MasterController::class, 'reorder'])->where('masterKey', $masterKeys)->name('reorder');
     Route::get('/{masterKey}', [MasterController::class, 'index'])->where('masterKey', $masterKeys)->name('index');
     Route::get('/{masterKey}/create', [MasterController::class, 'create'])->where('masterKey', $masterKeys)->name('create');
     Route::post('/{masterKey}', [MasterController::class, 'store'])->where('masterKey', $masterKeys)->name('store');

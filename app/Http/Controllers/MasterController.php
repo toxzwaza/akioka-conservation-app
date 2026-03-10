@@ -152,6 +152,32 @@ class MasterController extends Controller
     }
 
     /**
+     * 並び順の変更（ドラッグ＆ドロップ用）
+     */
+    public function reorder(Request $request, string $masterKey)
+    {
+        [$modelClass, $title] = $this->getModelAndTitle($masterKey);
+
+        $validated = $request->validate([
+            'order'   => ['required', 'array'],
+            'order.*' => ['required', 'integer'],
+        ]);
+
+        $ids = $validated['order'];
+        $exists = $modelClass::whereIn('id', $ids)->pluck('id')->toArray();
+        if (count($exists) !== count($ids) || count(array_diff($ids, $exists)) > 0) {
+            abort(422, 'Invalid order: one or more IDs do not exist.');
+        }
+
+        foreach ($ids as $sort => $id) {
+            $modelClass::where('id', $id)->update(['sort_order' => $sort]);
+        }
+
+        return redirect()->route('master.index', ['masterKey' => $masterKey])
+            ->with('success', "{$title}の並び順を更新しました。");
+    }
+
+    /**
      * 削除
      */
     public function destroy(string $masterKey, int $id)

@@ -1,6 +1,7 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
+import Breadcrumb from '@/Components/Breadcrumb.vue';
 import SidebarNavLink from '@/Components/SidebarNavLink.vue';
 import SidebarNavItem from '@/Components/SidebarNavItem.vue';
 import { Link } from '@inertiajs/vue3';
@@ -8,15 +9,29 @@ import { usePage } from '@inertiajs/vue3';
 
 const STORAGE_KEY = 'sidebar-collapsed';
 const FLASH_DURATION_MS = 5000;
+const SCROLL_THRESHOLD = 10;
 
 const page = usePage();
+const lastScrollY = ref(0);
+const headerVisible = ref(true);
 const sidebarOpen = ref(false);
 const sidebarCollapsed = ref(false);
 const flashVisible = ref(false);
 
+function onScroll() {
+    const y = window.scrollY || document.documentElement.scrollTop;
+    if (Math.abs(y - lastScrollY.value) < SCROLL_THRESHOLD) return;
+    headerVisible.value = y < lastScrollY.value || y < 50;
+    lastScrollY.value = y;
+}
+
 onMounted(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored !== null) sidebarCollapsed.value = stored === 'true';
+    window.addEventListener('scroll', onScroll, { passive: true });
+});
+onBeforeUnmount(() => {
+    window.removeEventListener('scroll', onScroll);
 });
 
 function toggleSidebar() {
@@ -75,6 +90,7 @@ const masterChildren = computed(() => {
     const list = [
         { key: 'parts', label: '部品', href: () => route('master.parts.index') },
         { key: 'equipments', label: '設備', href: () => route('master.equipments.index') },
+        { key: 'vendors', label: '業者', href: () => route('master.vendors.index') },
         { key: 'work-statuses', label: '作業ステータス', href: () => route('master.index', { masterKey: 'work-statuses' }) },
         { key: 'work-priorities', label: '優先度', href: () => route('master.index', { masterKey: 'work-priorities' }) },
         { key: 'work-purposes', label: '作業目的', href: () => route('master.index', { masterKey: 'work-purposes' }) },
@@ -91,6 +107,84 @@ const masterChildren = computed(() => {
         label,
         active: isMasterChildActive(key),
     }));
+});
+
+// パンくずリスト（URLパスとpropsから生成）
+const breadcrumbs = computed(() => {
+    const path = page.url.replace(/^\//, '').replace(/\/$/, '') || '';
+    const segments = path ? path.split('/') : [];
+    const props = page.props;
+    const items = [];
+
+    if (!segments.length || path === '') {
+        return [{ label: 'ダッシュボード', href: route('dashboard') }];
+    }
+
+    const first = segments[0];
+    if (first === 'work') {
+        items.push({ label: '作業', href: route('work.works.index') });
+        if (segments[1] === 'works') {
+            items.push({ label: '作業一覧', href: route('work.works.index') });
+            if (segments[2] === 'create') {
+                items.push({ label: '新規登録' });
+            } else if (segments[2] && props.work) {
+                items.push({ label: props.work.title || `#${segments[2]}` });
+            }
+        }
+        return items.length ? items : [{ label: '作業', href: route('work.works.index') }];
+    }
+
+    if (first === 'master') {
+        items.push({ label: 'マスタ', href: route('master.top') });
+        const masterLabels = {
+            parts: '部品',
+            equipments: '設備',
+            vendors: '業者',
+            users: 'ユーザー',
+            'work-statuses': '作業ステータス',
+            'work-priorities': '優先度',
+            'work-purposes': '作業目的',
+            'work-content-tags': '作業タグ',
+            'repair-types': '修理内容',
+            'attachment-types': '添付種別',
+            'work-activity-types': '操作履歴種別',
+            'work-cost-categories': '費用カテゴリ',
+        };
+        const second = segments[1];
+        const label = masterLabels[second] || second;
+        if (second) {
+            const idxHref = second === 'parts' ? route('master.parts.index')
+                : second === 'equipments' ? route('master.equipments.index')
+                : second === 'vendors' ? route('master.vendors.index')
+                : second === 'users' ? route('master.users.index')
+                : route('master.index', { masterKey: second });
+            if (segments[2] === 'create') {
+                items.push({ label, href: idxHref });
+                items.push({ label: '新規登録' });
+            } else if (segments[3] === 'edit') {
+                items.push({ label, href: idxHref });
+                const name = props.part?.display_name ?? props.equipment?.name ?? props.vendor?.name ?? props.user?.name;
+                items.push({ label: name || `#${segments[2]}` });
+                items.push({ label: '編集' });
+            } else if (segments[2] && !['create', 'edit'].includes(segments[2])) {
+                items.push({ label, href: idxHref });
+                const name = props.part?.display_name ?? props.equipment?.name ?? props.vendor?.name ?? props.user?.name;
+                items.push({ label: name || `#${segments[2]}` });
+            } else {
+                items.push({ label, href: idxHref });
+            }
+        }
+        return items.length ? items : [{ label: 'マスタ', href: route('master.top') }];
+    }
+
+    if (first === 'profile') {
+        return [{ label: 'プロフィール' }];
+    }
+    if (first === 'api-test') {
+        return [{ label: 'APIテスト', href: route('api-test.index') }];
+    }
+
+    return [{ label: path || 'ダッシュボード', href: route('dashboard') }];
 });
 
 const navItems = computed(() => {
@@ -296,16 +390,45 @@ const navItems = computed(() => {
             class="flex flex-1 flex-col transition-[margin] duration-200"
             :class="sidebarCollapsed ? 'lg:pl-20' : 'lg:pl-64'"
         >
+            <!-- 固定ヘッダー（上スクロールで表示、下スクロールで非表示） -->
             <header
-                v-if="$slots.header"
-                class="border-b border-slate-200 bg-white/80 backdrop-blur-sm"
+                class="fixed top-14 left-0 right-0 z-20 lg:top-0 border-b border-slate-200 bg-white/95 backdrop-blur-sm shadow-sm transition-transform duration-300 ease-out"
+                :class="[
+                    sidebarCollapsed ? 'lg:left-20' : 'lg:left-64',
+                    headerVisible ? 'translate-y-0' : '-translate-y-full'
+                ]"
             >
-                <div class="px-4 py-5 sm:px-6 lg:px-8">
-                    <slot name="header" />
+                <div class="flex items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8 min-h-[65px]">
+                    <Breadcrumb :items="breadcrumbs" />
+                    <div class="flex items-center shrink-0">
+                        <Link
+                            v-if="$page.props.auth?.user?.id"
+                            :href="route('master.users.show', $page.props.auth.user.id)"
+                            class="flex flex-col items-end text-right hover:opacity-80 transition-opacity"
+                        >
+                            <p class="text-sm font-medium text-slate-800 truncate max-w-[180px] sm:max-w-[240px]">
+                                {{ $page.props.auth?.user?.name ?? 'ユーザー' }}
+                            </p>
+                            <p class="text-xs text-slate-500 truncate max-w-[180px] sm:max-w-[240px]">
+                                {{ $page.props.auth?.user?.email ?? '' }}
+                            </p>
+                        </Link>
+                        <div
+                            v-else
+                            class="flex flex-col items-end text-right"
+                        >
+                            <p class="text-sm font-medium text-slate-800 truncate max-w-[180px] sm:max-w-[240px]">
+                                {{ $page.props.auth?.user?.name ?? 'ユーザー' }}
+                            </p>
+                            <p class="text-xs text-slate-500 truncate max-w-[180px] sm:max-w-[240px]">
+                                {{ $page.props.auth?.user?.email ?? '' }}
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </header>
 
-            <main class="flex-1 pt-14 lg:pt-0">
+            <main class="flex-1 pt-[121px] lg:pt-[65px]">
                 <div class="px-4 py-6 sm:px-6 lg:px-8">
                     <slot />
                 </div>

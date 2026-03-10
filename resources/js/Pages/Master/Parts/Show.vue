@@ -156,21 +156,6 @@ function removeImage() {
     <Head title="部品 - 詳細" />
 
     <AuthenticatedLayout>
-        <template #header>
-            <div class="flex flex-wrap items-center justify-between gap-2">
-                <div class="flex flex-wrap items-center gap-2">
-                    <Link
-                        :href="route('master.parts.index')"
-                        class="text-slate-600 hover:text-slate-900 text-sm"
-                    >
-                        ← 部品一覧
-                    </Link>
-                    <span class="text-slate-400">/</span>
-                    <h1 class="text-xl font-semibold text-slate-800 tracking-tight">部品 - 詳細</h1>
-                </div>
-            </div>
-        </template>
-
         <div class="max-w-full space-y-6">
             <div v-if="apiDetail" class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
                 API連携済み：Conservation API から取得した情報を表示しています

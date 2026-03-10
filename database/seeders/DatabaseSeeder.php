@@ -26,6 +26,7 @@ class DatabaseSeeder extends Seeder
             WorkActivityTypeSeeder::class,
             // PartSeeder::class,
             WorkCostCategorySeeder::class,
+            VendorSeeder::class,
             // WorkSeeder::class,
             // WorkContentSeeder::class,
             // WorkUsedPartSeeder::class,

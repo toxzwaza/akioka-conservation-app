@@ -331,10 +331,6 @@ watch(
     <Head title="Conservation API テスト" />
 
     <AuthenticatedLayout>
-        <template #header>
-            <h1 class="text-xl font-semibold text-slate-800 tracking-tight">Conservation API テスト</h1>
-        </template>
-
         <div class="space-y-6">
             <p class="text-sm text-slate-600">
                 物品・在庫格納先・ユーザーAPIのテスト実行と実行履歴の確認ができます。ベースURL:

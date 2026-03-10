@@ -20,9 +20,11 @@ use App\Models\WorkCostCategory;
 use App\Models\WorkPriority;
 use App\Models\WorkPurpose;
 use App\Models\RepairType;
+use App\Models\Vendor;
 use App\Models\WorkStatus;
 use App\Models\WorkUsedPart;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -33,43 +35,85 @@ class WorkController extends Controller
     /**
      * 作業一覧
      */
-    public function index()
+    public function index(Request $request)
     {
-        $works = Work::with([
-            'equipment:id,name',
+        $query = Work::with([
+            'equipments:id,name,parent_id',
+            'equipments.parent' => fn ($q) => $q->select('id', 'name', 'parent_id'),
             'workStatus' => fn ($q) => $q->select('id', 'name', 'color'),
             'workPriority' => fn ($q) => $q->select('id', 'name', 'color'),
+            'workPurposes' => fn ($q) => $q->select('work_purposes.id', 'name', 'color'),
             'assignedUser' => fn ($q) => $q->select('id', 'name', 'color'),
-        ])
-            ->orderByDesc('created_at')
-            ->paginate(15);
+        ]);
+
+        if ($request->filled('equipment_id')) {
+            $query->whereHas('equipments', fn ($q) => $q->where('equipments.id', $request->equipment_id));
+        }
+        if ($request->filled('work_status_id')) {
+            $query->where('work_status_id', $request->work_status_id);
+        }
+        if ($request->filled('work_purpose_id')) {
+            $query->whereHas('workPurposes', fn ($q) => $q->where('work_purposes.id', $request->work_purpose_id));
+        }
+        if ($request->filled('assigned_user_id')) {
+            $query->where('assigned_user_id', $request->assigned_user_id);
+        }
+        if ($request->filled('occurred_from')) {
+            $query->whereDate('occurred_at', '>=', $request->occurred_from);
+        }
+        if ($request->filled('occurred_to')) {
+            $query->whereDate('occurred_at', '<=', $request->occurred_to);
+        }
+
+        $sortKey = $request->get('sort_key', 'created_at');
+        $sortOrder = $request->get('sort_order', 'desc');
+        $allowedSortKeys = ['id', 'title', 'created_at', 'work_status_id', 'work_priority_id', 'assigned_user_id'];
+        if (in_array($sortKey, $allowedSortKeys, true)) {
+            $query->orderBy($sortKey, $sortOrder === 'asc' ? 'asc' : 'desc');
+        } else {
+            $query->orderByDesc('created_at');
+            $sortKey = 'created_at';
+            $sortOrder = 'desc';
+        }
+
+        $works = $query->paginate(15)->withQueryString();
+
+        $equipments = Equipment::with('parent:id,name,parent_id')->orderBy('name')->get(['id', 'name', 'parent_id']);
 
         return Inertia::render('Works/Index', [
             'works' => $works,
+            'equipments' => $equipments,
+            'workStatuses' => self::cachedWorkStatuses(),
+            'workPurposes' => self::cachedWorkPurposes(),
+            'users' => self::getUsersForSelect(),
+            'sort_key' => $sortKey,
+            'sort_order' => $sortOrder,
         ]);
     }
 
     /**
      * 作業詳細
+     * 部品一覧は渡さず、使用部品追加は searchParts で都度取得。表示中の使用部品の display_name のみ解決する。
      */
     public function show(Work $work, PartDisplayNameService $displayNameService)
     {
         $work->load([
-            'equipment' => fn ($q) => $q->with('parent.parent.parent.parent.parent'),
+            'equipments' => fn ($q) => $q->with('parent.parent.parent.parent.parent')->orderByPivot('sort_order'),
             'workStatus' => fn ($q) => $q->select('id', 'name', 'color'),
             'workPriority' => fn ($q) => $q->select('id', 'name', 'color'),
-            'workPurpose' => fn ($q) => $q->select('id', 'name', 'color'),
+            'workPurposes' => fn ($q) => $q->select('work_purposes.id', 'name', 'color'),
             'assignedUser' => fn ($q) => $q->select('id', 'name', 'color'),
-            'additionalUser' => fn ($q) => $q->select('id', 'name', 'color'),
+            'additionalUsers' => fn ($q) => $q->select('users.id', 'name', 'color')->orderByPivot('sort_order'),
             'summaryDocuments',
-            'workContents' => fn ($q) => $q->with([
+            'workContents' => fn ($q) => $q->withoutGlobalScope('order')->with([
                 'workContentTags' => fn ($q) => $q->select('work_content_tags.id', 'name', 'color'),
                 'repairTypes' => fn ($q) => $q->select('repair_types.id', 'name', 'color'),
                 'workAttachments' => fn ($q) => $q->orderBy('id'),
-            ])->orderByDesc('created_at'),
+            ])->orderBy('display_order')->orderBy('id'),
             'workUsedParts' => fn ($q) => $q->with('part:id,part_no,name,external_id')->orderBy('id'),
             'workCosts' => fn ($q) => $q->with([
                 'workCostCategory' => fn ($q) => $q->select('id', 'name', 'color'),
+                'vendor' => fn ($q) => $q->select('id', 'name'),
             ])->orderBy('id'),
             'workActivities' => fn ($q) => $q->with([
                 'user' => fn ($q) => $q->select('id', 'name', 'color'),
@@ -77,15 +121,17 @@ class WorkController extends Controller
             ])->orderByDesc('created_at'),
         ]);
 
-        $parts = Part::orderBy('part_no')->get();
-        $partsWithDisplay = $displayNameService->resolveDisplayNames($parts, auth()->user());
-
-        // workUsedParts の part に display_name を付与（Inertia 用に setAttribute で attributes に追加）
-        $partDisplayMap = $partsWithDisplay->keyBy('id');
-        foreach ($work->workUsedParts as $wup) {
-            if ($wup->part) {
-                $dn = $partDisplayMap[$wup->part->id]['display_name'] ?? $wup->part->name ?? '—';
-                $wup->part->setAttribute('display_name', $dn);
+        // 表示中の使用部品の part にのみ display_name を付与（全部品は読まない）
+        $partIds = $work->workUsedParts->pluck('part_id')->filter()->unique()->values()->all();
+        if ($partIds !== []) {
+            $partsSubset = Part::whereIn('id', $partIds)->orderBy('part_no')->get();
+            $partsWithDisplay = $displayNameService->resolveDisplayNames($partsSubset, auth()->user());
+            $partDisplayMap = $partsWithDisplay->keyBy('id');
+            foreach ($work->workUsedParts as $wup) {
+                if ($wup->part) {
+                    $dn = $partDisplayMap[$wup->part->id]['display_name'] ?? $wup->part->name ?? '—';
+                    $wup->part->setAttribute('display_name', $dn);
+                }
             }
         }
 
@@ -103,21 +149,22 @@ class WorkController extends Controller
 
         return Inertia::render('Works/Show', [
             'work' => $work,
-            'workContentTags' => WorkContentTag::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
-            'repairTypes' => RepairType::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
-            'parts' => $partsWithDisplay,
-            'workCostCategories' => WorkCostCategory::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
-            'workStatuses' => WorkStatus::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
-            'workPriorities' => WorkPriority::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
-            'workPurposes' => WorkPurpose::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
-            'parentEquipmentOptions' => Equipment::getRootOptionsForSelect(),
+            'workContentTags' => self::cachedWorkContentTags(),
+            'repairTypes' => self::cachedRepairTypes(),
+            'parts' => [],
+            'workCostCategories' => self::cachedWorkCostCategories(),
+            'vendors' => self::cachedVendors(),
+            'workStatuses' => self::cachedWorkStatuses(),
+            'workPriorities' => self::cachedWorkPriorities(),
+            'workPurposes' => self::cachedWorkPurposes(),
+            'parentEquipmentOptions' => self::cachedEquipmentRootOptions(),
             'equipmentChildrenByParentId' => self::buildEquipmentChildrenByParentId(),
             'users' => self::getUsersForSelect(),
         ]);
     }
 
     /**
-     * 担当者選択用ユーザー取得（external_id ありは API の氏名を付与）
+     * 担当者選択用ユーザー取得（external_id ありは API の氏名を付与、キャッシュで高速化）
      *
      * @return \Illuminate\Support\Collection<int, object{id: int, name: string, color: string|null, api_name?: string}>
      */
@@ -128,15 +175,19 @@ class WorkController extends Controller
 
         foreach ($users as $user) {
             if ($user->external_id && $baseUrl) {
-                try {
-                    $response = Http::timeout(5)->get($baseUrl . '/users/' . $user->external_id);
-                    if ($response->successful()) {
-                        $api = $response->json();
-                        $user->api_name = $api['name'] ?? null;
+                $cacheKey = 'user_api_name_' . $user->id;
+                $user->api_name = Cache::remember($cacheKey, 600, function () use ($baseUrl, $user) {
+                    try {
+                        $response = Http::timeout(5)->get($baseUrl . '/users/' . $user->external_id);
+                        if ($response->successful()) {
+                            $api = $response->json();
+                            return $api['name'] ?? null;
+                        }
+                    } catch (\Throwable $e) {
+                        // API 取得失敗時は null（DB の name をそのまま使用）
                     }
-                } catch (\Throwable $e) {
-                    // API 取得失敗時は DB の name をそのまま使用
-                }
+                    return null;
+                });
             }
         }
 
@@ -144,41 +195,83 @@ class WorkController extends Controller
     }
 
     /**
-     * 作業登録フォームを表示
+     * マスタキャッシュ（TTL 5分）。
+     * マスタ更新時は次のキーを無効化すること: work_statuses_active, work_priorities_active, work_purposes_active,
+     * work_content_tags_active, repair_types_active, work_cost_categories_active, vendors_options,
+     * equipment_root_options, equipment_children_by_parent_id
      */
-    public function create(PartDisplayNameService $displayNameService)
+    private static function cachedWorkStatuses()
     {
-        $parts = Part::orderBy('part_no')->get();
-        $partsWithDisplay = $displayNameService->resolveDisplayNames($parts, auth()->user());
+        return Cache::remember('work_statuses_active', 300, fn () => WorkStatus::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']));
+    }
 
+    private static function cachedWorkPriorities()
+    {
+        return Cache::remember('work_priorities_active', 300, fn () => WorkPriority::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']));
+    }
+
+    private static function cachedWorkPurposes()
+    {
+        return Cache::remember('work_purposes_active', 300, fn () => WorkPurpose::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']));
+    }
+
+    private static function cachedWorkContentTags()
+    {
+        return Cache::remember('work_content_tags_active', 300, fn () => WorkContentTag::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']));
+    }
+
+    private static function cachedRepairTypes()
+    {
+        return Cache::remember('repair_types_active', 300, fn () => RepairType::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']));
+    }
+
+    private static function cachedWorkCostCategories()
+    {
+        return Cache::remember('work_cost_categories_active', 300, fn () => WorkCostCategory::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']));
+    }
+
+    private static function cachedVendors()
+    {
+        return Cache::remember('vendors_options', 300, fn () => Vendor::getOptionsForSelect());
+    }
+
+    private static function cachedEquipmentRootOptions(): array
+    {
+        return Cache::remember('equipment_root_options', 300, fn () => Equipment::getRootOptionsForSelect());
+    }
+
+    /**
+     * 作業登録フォームを表示
+     * 部品は検索API（searchParts）で都度取得するため初期表示では渡さない
+     */
+    public function create()
+    {
         return Inertia::render('Works/Create', [
-            'parentEquipmentOptions' => Equipment::getRootOptionsForSelect(),
+            'parentEquipmentOptions' => self::cachedEquipmentRootOptions(),
             'equipmentChildrenByParentId' => self::buildEquipmentChildrenByParentId(),
-            'workStatuses' => WorkStatus::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
-            'workPriorities' => WorkPriority::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
-            'workPurposes' => WorkPurpose::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
-            'workContentTags' => WorkContentTag::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
-            'repairTypes' => RepairType::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
-            'parts' => $partsWithDisplay,
-            'workCostCategories' => WorkCostCategory::where('is_active', true)->orderBy('sort_order')->get(['id', 'name', 'color']),
+            'workStatuses' => self::cachedWorkStatuses(),
+            'workPriorities' => self::cachedWorkPriorities(),
+            'workPurposes' => self::cachedWorkPurposes(),
+            'workContentTags' => self::cachedWorkContentTags(),
+            'repairTypes' => self::cachedRepairTypes(),
+            'parts' => [],
+            'workCostCategories' => self::cachedWorkCostCategories(),
+            'vendors' => self::cachedVendors(),
             'users' => self::getUsersForSelect(),
         ]);
     }
 
     /**
      * 各ルート設備IDをキーに、子設備オプションをマップする
-     * Inertia/JS で equipmentChildrenByParentId[parentId] として利用
+     * 設備を1回だけ取得してメモリ上でツリーを組み立て（N+1 回避）
      *
      * @return array<string, array<int, array{id: int, name: string, display_label: string, depth: int}>>
      */
     private static function buildEquipmentChildrenByParentId(): array
     {
-        $roots = Equipment::getRootOptionsForSelect();
-        $map = [];
-        foreach ($roots as $root) {
-            $map[(string) $root['id']] = Equipment::getChildOptionsForSelect($root['id']);
-        }
-        return $map;
+        return Cache::remember('equipment_children_by_parent_id', 300, function () {
+            return Equipment::buildTreeMapForChildrenByParentId();
+        });
     }
 
     /**
@@ -428,7 +521,7 @@ class WorkController extends Controller
     public function store(Request $request)
     {
         $input = $request->all();
-        foreach (['additional_user_id', 'occurred_at', 'started_at', 'completed_at', 'production_stop_minutes'] as $key) {
+        foreach (['occurred_at', 'completed_at', 'production_stop_minutes'] as $key) {
             if (isset($input[$key]) && $input[$key] === '') {
                 $input[$key] = null;
             }
@@ -436,15 +529,18 @@ class WorkController extends Controller
 
         $workRules = [
             'title' => ['required', 'string', 'max:255'],
-            'equipment_id' => ['required', 'exists:equipments,id'],
+            'equipments' => ['required', 'array', 'min:1'],
+            'equipments.*.parent_id' => ['required', 'exists:equipments,id'],
+            'equipments.*.equipment_id' => ['required', 'exists:equipments,id'],
             'work_status_id' => ['required', 'exists:work_statuses,id'],
-            'work_priority_id' => ['required', 'exists:work_priorities,id'],
-            'work_purpose_id' => ['required', 'exists:work_purposes,id'],
+            'work_priority_id' => ['nullable', 'exists:work_priorities,id'],
+            'work_purpose_ids' => ['required', 'array', 'min:1'],
+            'work_purpose_ids.*' => ['exists:work_purposes,id'],
             'assigned_user_id' => ['required', 'exists:users,id'],
-            'additional_user_id' => ['nullable', 'exists:users,id'],
+            'additional_user_ids' => ['nullable', 'array'],
+            'additional_user_ids.*.user_id' => ['nullable', 'exists:users,id'],
             'production_stop_minutes' => ['nullable', 'integer', 'min:0'],
             'occurred_at' => ['nullable', 'date'],
-            'started_at' => ['nullable', 'date'],
             'completed_at' => ['nullable', 'date'],
             'note' => ['nullable', 'string'],
             'work_contents' => ['nullable', 'array'],
@@ -463,7 +559,9 @@ class WorkController extends Controller
             'work_used_parts.*.note' => ['nullable', 'string'],
             'work_costs' => ['nullable', 'array'],
             'work_costs.*.work_cost_category_id' => ['nullable', 'exists:work_cost_categories,id'],
+            'work_costs.*.name' => ['nullable', 'string', 'max:255'],
             'work_costs.*.amount' => ['nullable', 'integer', 'min:0'],
+            'work_costs.*.vendor_id' => ['nullable', 'exists:vendors,id'],
             'work_costs.*.vendor_name' => ['nullable', 'string', 'max:255'],
             'work_costs.*.occurred_at' => ['nullable', 'date'],
             'work_costs.*.note' => ['nullable', 'string'],
@@ -471,12 +569,36 @@ class WorkController extends Controller
             'summary_documents' => ['nullable', 'array'],
             'summary_documents.*.display_name' => ['nullable', 'string', 'max:255'],
             'summary_documents.*.file' => ['nullable', 'file', 'mimes:pdf,xlsx,xls,docx,doc,jpg,jpeg,png,gif,webp', 'max:20480'], // 20MB
+            'comments' => ['nullable', 'array'],
+            'comments.*.message' => ['nullable', 'string', 'max:4000'],
         ];
 
         $validated = validator($input, $workRules)->validate();
 
-        $workData = collect($validated)->except(['work_contents', 'work_used_parts', 'work_costs', 'summary_documents'])->all();
+        $workData = collect($validated)->except([
+            'work_contents', 'work_used_parts', 'work_costs', 'summary_documents',
+            'equipments', 'work_purpose_ids', 'additional_user_ids',
+        ])->filter(fn ($v, $k) => in_array($k, ['title', 'work_status_id', 'work_priority_id', 'assigned_user_id', 'production_stop_minutes', 'occurred_at', 'completed_at', 'note'], true))->all();
         $work = Work::create($workData);
+
+        foreach ($validated['equipments'] ?? [] as $sort => $row) {
+            $eqId = $row['equipment_id'] ?? null;
+            if ($eqId) {
+                $work->equipments()->attach($eqId, ['sort_order' => $sort]);
+            }
+        }
+        $purposeIds = array_values(array_filter(array_map('intval', $validated['work_purpose_ids'] ?? [])));
+        if ($purposeIds !== []) {
+            $work->workPurposes()->sync($purposeIds);
+        }
+        $additionalIds = [];
+        foreach ($validated['additional_user_ids'] ?? [] as $sort => $row) {
+            $uid = $row['user_id'] ?? null;
+            if ($uid) {
+                $additionalIds[$uid] = ['sort_order' => $sort];
+            }
+        }
+        $work->additionalUsers()->sync($additionalIds);
 
         $photoAttachmentType = AttachmentType::where('name', '写真')->first();
         $photoTypeId = $photoAttachmentType?->id;
@@ -490,8 +612,9 @@ class WorkController extends Controller
             $repairIds = array_filter(array_map('intval', is_array($repairIds) ? $repairIds : []));
 
             if ($content !== '' && (count($tagIds) > 0 || count($repairIds) > 0)) {
-                $wc = WorkContent::create([
+                $wc = WorkContent::withoutGlobalScope('order')->create([
                     'work_id' => $work->id,
+                    'display_order' => $index,
                     'content' => $content,
                     'started_at' => isset($item['started_at']) && $item['started_at'] !== '' ? $item['started_at'] : null,
                     'ended_at' => isset($item['ended_at']) && $item['ended_at'] !== '' ? $item['ended_at'] : null,
@@ -575,6 +698,17 @@ class WorkController extends Controller
             $amountRaw = $item['amount'] ?? '';
             $amount = $amountRaw !== '' && $amountRaw !== null ? (int) $amountRaw : null;
             if ($categoryId && $amount !== null && $amount >= 0) {
+                $vendorId = isset($item['vendor_id']) && $item['vendor_id'] !== '' ? $item['vendor_id'] : null;
+                $vendorName = isset($item['vendor_name']) && $item['vendor_name'] !== '' ? trim($item['vendor_name']) : null;
+                if (! $vendorId && $vendorName) {
+                    $vendor = Vendor::firstOrCreate(
+                        ['name' => $vendorName],
+                        ['is_active' => true, 'sort_order' => 0]
+                    );
+                    $vendorId = $vendor->id;
+                    $vendorName = null;
+                    Cache::forget('vendors_options');
+                }
                 $filePath = null;
                 $file = $request->file("work_costs.{$index}.file");
                 if ($file && $file->isValid()) {
@@ -585,8 +719,10 @@ class WorkController extends Controller
                 WorkCost::create([
                     'work_id' => $work->id,
                     'work_cost_category_id' => $categoryId,
+                    'name' => isset($item['name']) && $item['name'] !== '' ? $item['name'] : null,
                     'amount' => $amount,
-                    'vendor_name' => isset($item['vendor_name']) && $item['vendor_name'] !== '' ? $item['vendor_name'] : null,
+                    'vendor_id' => $vendorId,
+                    'vendor_name' => $vendorName,
                     'occurred_at' => isset($item['occurred_at']) && $item['occurred_at'] !== '' ? $item['occurred_at'] : null,
                     'note' => isset($item['note']) && $item['note'] !== '' ? $item['note'] : null,
                     'file_path' => $filePath,
@@ -620,6 +756,22 @@ class WorkController extends Controller
 
         $this->recordWorkActivity($work, '作成', $message);
 
+        // 仮登録コメントを同時に登録
+        $commentType = WorkActivityType::where('name', 'コメント')->first();
+        if ($commentType) {
+            foreach ($validated['comments'] ?? [] as $item) {
+                $msg = isset($item['message']) ? trim((string) $item['message']) : '';
+                if ($msg !== '') {
+                    WorkActivity::create([
+                        'work_id' => $work->id,
+                        'user_id' => auth()->id(),
+                        'work_activity_type_id' => $commentType->id,
+                        'message' => $msg,
+                    ]);
+                }
+            }
+        }
+
         return redirect()->route('work.works.show', $work)->with('status', $message);
     }
 
@@ -629,116 +781,107 @@ class WorkController extends Controller
     public function update(Request $request, Work $work)
     {
         $input = $request->all();
-        foreach (['additional_user_id', 'occurred_at', 'started_at', 'completed_at', 'production_stop_minutes'] as $key) {
+        foreach (['occurred_at', 'completed_at', 'production_stop_minutes'] as $key) {
             if (isset($input[$key]) && $input[$key] === '') {
                 $input[$key] = null;
             }
         }
 
-        $validated = $request->validate([
+        $rules = [
             'title' => ['required', 'string', 'max:255'],
-            'equipment_id' => ['required', 'exists:equipments,id'],
+            'equipments' => ['required', 'array', 'min:1'],
+            'equipments.*.parent_id' => ['required', 'exists:equipments,id'],
+            'equipments.*.equipment_id' => ['required', 'exists:equipments,id'],
             'work_status_id' => ['required', 'exists:work_statuses,id'],
-            'work_priority_id' => ['required', 'exists:work_priorities,id'],
-            'work_purpose_id' => ['required', 'exists:work_purposes,id'],
+            'work_priority_id' => ['nullable', 'exists:work_priorities,id'],
+            'work_purpose_ids' => ['required', 'array', 'min:1'],
+            'work_purpose_ids.*' => ['exists:work_purposes,id'],
             'assigned_user_id' => ['required', 'exists:users,id'],
-            'additional_user_id' => ['nullable', 'exists:users,id'],
+            'additional_user_ids' => ['nullable', 'array'],
+            'additional_user_ids.*.user_id' => ['nullable', 'exists:users,id'],
             'production_stop_minutes' => ['nullable', 'integer', 'min:0'],
             'occurred_at' => ['nullable', 'date'],
-            'started_at' => ['nullable', 'date'],
             'completed_at' => ['nullable', 'date'],
             'note' => ['nullable', 'string', 'max:65535'],
-        ]);
-
-        foreach (['additional_user_id', 'production_stop_minutes', 'note'] as $k) {
-            if (isset($validated[$k]) && $validated[$k] === '') {
-                $validated[$k] = null;
-            }
-        }
-        foreach (['occurred_at', 'started_at', 'completed_at'] as $k) {
-            if (isset($validated[$k]) && $validated[$k] === '') {
-                $validated[$k] = null;
-            }
-        }
-
-        $updateData = [];
-        $changes = [];
-
-        $fieldConfig = [
-            'title' => ['label' => '作業名', 'format' => fn ($v) => $v ?? '—'],
-            'equipment_id' => [
-                'label' => '設備',
-                'format' => fn ($v) => $v ? (Equipment::find($v)?->name ?? $v) : '—',
-            ],
-            'work_status_id' => [
-                'label' => 'ステータス',
-                'format' => fn ($v) => $v ? (WorkStatus::find($v)?->name ?? $v) : '—',
-            ],
-            'work_priority_id' => [
-                'label' => '優先度',
-                'format' => fn ($v) => $v ? (WorkPriority::find($v)?->name ?? $v) : '—',
-            ],
-            'work_purpose_id' => [
-                'label' => '作業目的',
-                'format' => fn ($v) => $v ? (WorkPurpose::find($v)?->name ?? $v) : '—',
-            ],
-            'assigned_user_id' => [
-                'label' => '主担当',
-                'format' => fn ($v) => $v ? (User::find($v)?->name ?? $v) : '—',
-            ],
-            'additional_user_id' => [
-                'label' => '追加担当',
-                'format' => fn ($v) => $v ? (User::find($v)?->name ?? $v) : '—',
-            ],
-            'production_stop_minutes' => [
-                'label' => '停止時間',
-                'format' => fn ($v) => $v !== null && $v !== '' ? $v . '分' : '—',
-            ],
-            'occurred_at' => [
-                'label' => '発生日',
-                'format' => fn ($v) => $v ? (\Carbon\Carbon::parse($v)->format('Y-m-d H:i')) : '—',
-            ],
-            'started_at' => [
-                'label' => '開始日時',
-                'format' => fn ($v) => $v ? (\Carbon\Carbon::parse($v)->format('Y-m-d H:i')) : '—',
-            ],
-            'completed_at' => [
-                'label' => '完了日時',
-                'format' => fn ($v) => $v ? (\Carbon\Carbon::parse($v)->format('Y-m-d H:i')) : '—',
-            ],
-            'note' => [
-                'label' => '備考',
-                'format' => fn ($v) => $v !== null && $v !== '' ? (strlen($v) > 30 ? substr($v, 0, 30) . '...' : $v) : '—',
-            ],
         ];
+        $validated = validator($input, $rules)->validate();
 
-        foreach ($fieldConfig as $key => $config) {
-            $oldVal = $work->getAttribute($key);
-            $newVal = $validated[$key] ?? null;
-            if ($newVal !== null && (string) $newVal === '') {
-                $newVal = in_array($key, ['additional_user_id', 'occurred_at', 'started_at', 'completed_at', 'production_stop_minutes', 'note'], true) ? null : $newVal;
+        foreach (['production_stop_minutes', 'note'] as $k) {
+            if (isset($validated[$k]) && $validated[$k] === '') {
+                $validated[$k] = null;
             }
-            $oldStr = $oldVal instanceof \DateTimeInterface ? $oldVal->format('Y-m-d H:i') : (string) ($oldVal ?? '');
-            $newStr = $newVal instanceof \DateTimeInterface ? \Carbon\Carbon::parse($newVal)->format('Y-m-d H:i') : (string) ($newVal ?? '');
-            if ($oldStr !== $newStr) {
-                $updateData[$key] = $newVal;
-                $oldDisp = $config['format']($oldVal);
-                $newDisp = $config['format']($newVal);
-                $changes[] = $config['label'] . 'を「' . $oldDisp . '」から「' . $newDisp . '」に変更';
+        }
+        foreach (['occurred_at', 'completed_at'] as $k) {
+            if (isset($validated[$k]) && $validated[$k] === '') {
+                $validated[$k] = null;
             }
         }
 
-        if ($updateData === []) {
-            return redirect()->route('work.works.show', $work)->with('status', '変更はありません。');
-        }
-
-        foreach ($changes as $msg) {
-            $this->recordWorkActivity($work, '更新', $msg);
-        }
-
+        $updateData = collect($validated)->only(['title', 'work_status_id', 'work_priority_id', 'assigned_user_id', 'production_stop_minutes', 'occurred_at', 'completed_at', 'note'])->all();
         $work->update($updateData);
 
+        $work->equipments()->sync([]);
+        foreach ($validated['equipments'] ?? [] as $sort => $row) {
+            $eqId = $row['equipment_id'] ?? null;
+            if ($eqId) {
+                $work->equipments()->attach($eqId, ['sort_order' => $sort]);
+            }
+        }
+        $purposeIds = array_values(array_filter(array_map('intval', $validated['work_purpose_ids'] ?? [])));
+        $work->workPurposes()->sync($purposeIds);
+        $additionalIds = [];
+        foreach ($validated['additional_user_ids'] ?? [] as $sort => $row) {
+            $uid = $row['user_id'] ?? null;
+            if ($uid) {
+                $additionalIds[$uid] = ['sort_order' => $sort];
+            }
+        }
+        $work->additionalUsers()->sync($additionalIds);
+
+        $this->recordWorkActivity($work, '更新', '作業概要を更新しました。');
+
         return redirect()->route('work.works.show', $work)->with('status', '作業を更新しました。');
+    }
+
+    /**
+     * 作業を「完了」に更新し、完了日時をセット
+     */
+    public function complete(Request $request, Work $work)
+    {
+        $validated = $request->validate([
+            'completed_at' => ['required', 'date'],
+        ]);
+
+        $completedStatus = WorkStatus::where('name', '完了')->first();
+        if (! $completedStatus) {
+            return redirect()->back()->withErrors(['work_status_id' => '「完了」ステータスが見つかりません。']);
+        }
+
+        $work->update([
+            'work_status_id' => $completedStatus->id,
+            'completed_at' => $validated['completed_at'],
+        ]);
+
+        $this->recordWorkActivity($work, '更新', 'ステータスを完了に更新しました。');
+
+        return redirect()->route('work.works.show', $work)->with('status', '作業を完了に更新しました。');
+    }
+
+    /**
+     * 作業内容の表示順を並び替え
+     */
+    public function reorderWorkContents(Request $request, Work $work)
+    {
+        $validated = $request->validate([
+            'order' => ['required', 'array'],
+            'order.*' => ['required', 'integer', 'exists:work_contents,id'],
+        ]);
+
+        foreach ($validated['order'] as $sort => $id) {
+            WorkContent::withoutGlobalScope('order')->where('id', $id)->where('work_id', $work->id)->update(['display_order' => $sort]);
+        }
+
+        return redirect()->route('work.works.show', $work)->with('status', '作業内容の並び順を更新しました。');
     }
 
     /**
@@ -779,11 +922,13 @@ class WorkController extends Controller
         $tagIds = array_filter(array_map('intval', $validated['work_content_tag_ids'] ?? []));
         $repairIds = array_filter(array_map('intval', $validated['repair_type_ids'] ?? []));
         if (count($tagIds) === 0 && count($repairIds) === 0) {
-            return redirect()->back()->withErrors(['work_content_tag_ids' => '作業タグまたは修理内容を1つ以上選択してください。']);
+            return redirect()->back()->withErrors(['work_content_tag_ids' => '作業タグを1つ以上選択してください。']);
         }
 
-        $wc = WorkContent::create([
+        $maxOrder = WorkContent::withoutGlobalScope('order')->where('work_id', $work->id)->max('display_order') ?? -1;
+        $wc = WorkContent::withoutGlobalScope('order')->create([
             'work_id' => $work->id,
+            'display_order' => $maxOrder + 1,
             'content' => $validated['content'],
             'started_at' => $validated['started_at'] ?? null,
             'ended_at' => $validated['ended_at'] ?? null,
@@ -877,14 +1022,33 @@ class WorkController extends Controller
      */
     public function storeWorkCost(Request $request, Work $work)
     {
-        $validated = $request->validate([
+        $input = $request->all();
+        if (isset($input['vendor_id']) && $input['vendor_id'] === '') {
+            $input['vendor_id'] = null;
+        }
+        $validated = validator($input, [
             'work_cost_category_id' => ['required', 'exists:work_cost_categories,id'],
             'amount' => ['required', 'integer', 'min:0'],
+            'name' => ['nullable', 'string', 'max:255'],
+            'vendor_id' => ['nullable', 'exists:vendors,id'],
             'vendor_name' => ['nullable', 'string', 'max:255'],
             'occurred_at' => ['nullable', 'date'],
             'note' => ['nullable', 'string'],
             'file' => ['nullable', 'file', 'max:10240'],
-        ]);
+        ])->validate();
+        $vendorId = $validated['vendor_id'] ?? null;
+        $vendorName = isset($validated['vendor_name']) && trim($validated['vendor_name']) !== '' ? trim($validated['vendor_name']) : null;
+        if (! $vendorId && $vendorName) {
+            $vendor = Vendor::firstOrCreate(
+                ['name' => $vendorName],
+                ['is_active' => true, 'sort_order' => 0]
+            );
+            $vendorId = $vendor->id;
+            $vendorName = null;
+            Cache::forget('vendors_options');
+        }
+        $validated['vendor_id'] = $vendorId;
+        $validated['vendor_name'] = $vendorName;
         $filePath = null;
         if ($request->hasFile('file') && $request->file('file')->isValid()) {
             $dir = 'work_costs/' . $work->id;

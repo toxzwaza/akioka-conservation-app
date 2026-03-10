@@ -164,6 +164,56 @@ class Equipment extends Model
     }
 
     /**
+     * 全設備を1回取得し、各ルートIDをキーに「親＋子孫」のセレクト用オプション配列を返す
+     * buildEquipmentChildrenByParentId 用（N+1 回避）
+     *
+     * @return array<string, array<int, array{id: int, name: string, display_label: string, depth: int}>>
+     */
+    public static function buildTreeMapForChildrenByParentId(): array
+    {
+        $all = self::orderBy('name')->get(['id', 'name', 'parent_id']);
+        $byParent = $all->groupBy('parent_id');
+        $roots = ($byParent->get(null) ?? collect())->sortBy('name')->values();
+        $prefix = '　';
+
+        $flattenForParent = function ($parentId) use ($byParent, $all, $prefix): array {
+            $parent = $all->firstWhere('id', $parentId);
+            if (! $parent) {
+                return [];
+            }
+            $result = [];
+            $result[] = [
+                'id' => $parent->id,
+                'name' => $parent->name,
+                'display_label' => $parent->name,
+                'depth' => 0,
+            ];
+            $children = ($byParent->get($parentId) ?? collect())->sortBy('name')->values();
+            $flatten = function ($items, int $depth) use (&$flatten, $byParent, &$result, $prefix) {
+                foreach ($items as $item) {
+                    $indent = $depth > 0 ? str_repeat($prefix, $depth) . '└ ' : '└ ';
+                    $result[] = [
+                        'id' => $item->id,
+                        'name' => $item->name,
+                        'display_label' => $indent . $item->name,
+                        'depth' => $depth,
+                    ];
+                    $grandChildren = ($byParent->get($item->id) ?? collect())->sortBy('name')->values();
+                    $flatten($grandChildren, $depth + 1);
+                }
+            };
+            $flatten($children, 1);
+            return $result;
+        };
+
+        $map = [];
+        foreach ($roots as $root) {
+            $map[(string) $root->id] = $flattenForParent($root->id);
+        }
+        return $map;
+    }
+
+    /**
      * 指定IDの子孫のID一覧を返す（自分自身は含まない）
      *
      * @param  \Illuminate\Support\Collection<int, Equipment>  $equipments

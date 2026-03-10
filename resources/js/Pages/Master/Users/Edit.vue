@@ -23,16 +23,6 @@ const form = useForm({
     <Head title="ユーザー - 編集" />
 
     <AuthenticatedLayout>
-        <template #header>
-            <div class="flex flex-wrap items-center gap-2">
-                <Link :href="route('master.users.index')" class="text-slate-600 hover:text-slate-900 text-sm">← ユーザー一覧</Link>
-                <span class="text-slate-400">/</span>
-                <Link :href="route('master.users.show', item.id)" class="text-slate-600 hover:text-slate-900 text-sm">詳細</Link>
-                <span class="text-slate-400">/</span>
-                <h1 class="text-xl font-semibold text-slate-800 tracking-tight">ユーザー - 編集</h1>
-            </div>
-        </template>
-
         <div class="max-w-2xl">
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm p-6">
                 <form @submit.prevent="form.put(route('master.users.update', item.id))" class="space-y-6">

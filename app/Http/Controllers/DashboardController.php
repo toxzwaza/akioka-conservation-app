@@ -24,9 +24,9 @@ class DashboardController extends Controller
         $myAssignedWorks = Work::query()
             ->where(function ($q) use ($userId) {
                 $q->where('assigned_user_id', $userId)
-                    ->orWhere('additional_user_id', $userId);
+                    ->orWhereHas('additionalUsers', fn ($q) => $q->where('users.id', $userId));
             })
-            ->with(['equipment:id,name', 'workStatus:id,name,sort_order', 'workPriority:id,name', 'assignedUser:id,name'])
+            ->with(['equipments:id,name', 'workStatus:id,name,sort_order', 'workPriority:id,name', 'assignedUser:id,name'])
             ->join('work_statuses', 'works.work_status_id', '=', 'work_statuses.id')
             ->orderBy('work_statuses.sort_order')
             ->orderByDesc('works.created_at')
@@ -34,7 +34,7 @@ class DashboardController extends Controller
             ->limit(10)
             ->get();
 
-        $recentWorks = Work::with(['equipment:id,name', 'workStatus:id,name', 'workPriority:id,name', 'assignedUser:id,name'])
+        $recentWorks = Work::with(['equipments:id,name', 'workStatus:id,name', 'workPriority:id,name', 'assignedUser:id,name'])
             ->orderByDesc('created_at')
             ->limit(10)
             ->get();

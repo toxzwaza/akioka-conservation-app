@@ -27,28 +27,16 @@ const display = computed(() => {
     <Head title="ユーザー - 詳細" />
 
     <AuthenticatedLayout>
-        <template #header>
-            <div class="flex flex-wrap items-center justify-between gap-2">
-                <div class="flex flex-wrap items-center gap-2">
-                    <Link
-                        :href="route('master.users.index')"
-                        class="text-slate-600 hover:text-slate-900 text-sm"
-                    >
-                        ← ユーザー一覧
-                    </Link>
-                    <span class="text-slate-400">/</span>
-                    <h1 class="text-xl font-semibold text-slate-800 tracking-tight">ユーザー - 詳細</h1>
-                </div>
+        <div class="max-w-2xl space-y-4">
+            <div class="flex justify-end">
                 <Link
                     :href="route('master.users.edit', item.id)"
-                    class="inline-flex items-center rounded-lg bg-slate-800 px-3 py-2 text-center text-sm font-medium text-white hover:bg-slate-700"
+                    class="inline-flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-center text-sm font-medium text-white hover:bg-slate-700"
                 >
+                    <PencilIcon />
                     編集
                 </Link>
             </div>
-        </template>
-
-        <div class="max-w-2xl space-y-4">
             <div v-if="apiDetail" class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
                 API連携済み：Conservation API から取得した情報を表示しています
             </div>

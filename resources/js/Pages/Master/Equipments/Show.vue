@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import PencilIcon from '@/Components/Icons/PencilIcon.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 
@@ -49,18 +50,13 @@ watch(() => props.thumbnailUrl, () => {
     <Head title="設備 - 詳細" />
 
     <AuthenticatedLayout>
-        <template #header>
-            <div class="flex flex-wrap items-center justify-between gap-2">
-                <div class="flex flex-wrap items-center gap-2">
-                    <Link :href="route('master.equipments.index')" class="text-slate-600 hover:text-slate-900 text-sm">← 設備一覧</Link>
-                    <span class="text-slate-400">/</span>
-                    <h1 class="text-xl font-semibold text-slate-800 tracking-tight">設備 - 詳細</h1>
-                </div>
-                <Link :href="route('master.equipments.edit', item.id)" class="inline-flex items-center rounded-lg bg-slate-800 px-3 py-2 text-center text-sm font-medium text-white hover:bg-slate-700">編集</Link>
-            </div>
-        </template>
-
         <div class="max-w-2xl space-y-6">
+            <div class="flex justify-end">
+                <Link :href="route('master.equipments.edit', item.id)" class="inline-flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-center text-sm font-medium text-white hover:bg-slate-700">
+                <PencilIcon />
+                編集
+            </Link>
+            </div>
             <!-- 画像 -->
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <div class="px-4 py-3 bg-slate-50 border-b border-slate-200">
