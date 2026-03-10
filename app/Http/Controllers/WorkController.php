@@ -48,6 +48,9 @@ class WorkController extends Controller
 
         if ($request->filled('equipment_id')) {
             $query->whereHas('equipments', fn ($q) => $q->where('equipments.id', $request->equipment_id));
+        } elseif ($request->filled('parent_equipment_id')) {
+            // 親設備のみ選択時: その親を親に持つ設備（直接の子）を持つ作業をすべて表示
+            $query->whereHas('equipments', fn ($q) => $q->where('equipments.parent_id', $request->parent_equipment_id));
         }
         if ($request->filled('work_status_id')) {
             $query->where('work_status_id', $request->work_status_id);
@@ -65,29 +68,37 @@ class WorkController extends Controller
             $query->whereDate('occurred_at', '<=', $request->occurred_to);
         }
 
-        $sortKey = $request->get('sort_key', 'created_at');
+        $sortKey = $request->get('sort_key', 'occurred_at');
         $sortOrder = $request->get('sort_order', 'desc');
-        $allowedSortKeys = ['id', 'title', 'created_at', 'work_status_id', 'work_priority_id', 'assigned_user_id'];
+        $allowedSortKeys = ['id', 'title', 'occurred_at', 'work_status_id', 'work_priority_id', 'assigned_user_id'];
         if (in_array($sortKey, $allowedSortKeys, true)) {
             $query->orderBy($sortKey, $sortOrder === 'asc' ? 'asc' : 'desc');
         } else {
-            $query->orderByDesc('created_at');
-            $sortKey = 'created_at';
+            $query->orderByDesc('occurred_at');
+            $sortKey = 'occurred_at';
             $sortOrder = 'desc';
         }
 
         $works = $query->paginate(15)->withQueryString();
 
-        $equipments = Equipment::with('parent:id,name,parent_id')->orderBy('name')->get(['id', 'name', 'parent_id']);
-
         return Inertia::render('Works/Index', [
             'works' => $works,
-            'equipments' => $equipments,
+            'parentEquipmentOptions' => self::cachedEquipmentRootOptions(),
+            'equipmentChildrenByParentId' => self::buildEquipmentChildrenByParentId(),
             'workStatuses' => self::cachedWorkStatuses(),
             'workPurposes' => self::cachedWorkPurposes(),
             'users' => self::getUsersForSelect(),
             'sort_key' => $sortKey,
             'sort_order' => $sortOrder,
+            'filters' => [
+                'parent_equipment_id' => $request->get('parent_equipment_id', ''),
+                'equipment_id' => $request->get('equipment_id', ''),
+                'work_status_id' => $request->get('work_status_id', ''),
+                'work_purpose_id' => $request->get('work_purpose_id', ''),
+                'assigned_user_id' => $request->get('assigned_user_id', ''),
+                'occurred_from' => $request->get('occurred_from', ''),
+                'occurred_to' => $request->get('occurred_to', ''),
+            ],
         ]);
     }
 
@@ -147,6 +158,20 @@ class WorkController extends Controller
             }
         }
 
+        $equipmentIds = $work->equipments->pluck('id')->all();
+        $relatedWorks = $equipmentIds === []
+            ? collect([])
+            : Work::where('id', '!=', $work->id)
+                ->whereHas('equipments', fn ($q) => $q->whereIn('equipments.id', $equipmentIds))
+                ->with([
+                    'equipments' => fn ($q) => $q->with('parent')->orderByPivot('sort_order'),
+                    'workStatus' => fn ($q) => $q->select('id', 'name', 'color'),
+                    'workPriority' => fn ($q) => $q->select('id', 'name', 'color'),
+                ])
+                ->orderByDesc('occurred_at')
+                ->limit(10)
+                ->get();
+
         return Inertia::render('Works/Show', [
             'work' => $work,
             'workContentTags' => self::cachedWorkContentTags(),
@@ -160,6 +185,7 @@ class WorkController extends Controller
             'parentEquipmentOptions' => self::cachedEquipmentRootOptions(),
             'equipmentChildrenByParentId' => self::buildEquipmentChildrenByParentId(),
             'users' => self::getUsersForSelect(),
+            'relatedWorks' => $relatedWorks,
         ]);
     }
 

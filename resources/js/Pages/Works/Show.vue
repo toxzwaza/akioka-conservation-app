@@ -25,6 +25,7 @@ const props = defineProps({
     equipmentChildrenByParentId: Object,
     users: Array,
     vendors: Array,
+    relatedWorks: Array,
 });
 
 const page = usePage();
@@ -504,43 +505,163 @@ function submitWorkEdit() {
     <AuthenticatedLayout>
         <div class="flex gap-6">
             <!-- 左: 詳細コンテンツ（約70%） -->
-            <div class="flex-1 min-w-0 max-w-full space-y-6">
+            <div class="flex-1 min-w-0 max-w-full space-y-5">
 
             <!-- 作業概要 -->
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                    <h2 class="text-sm font-semibold text-slate-800">作業概要</h2>
+                    <h2 class="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        作業概要
+                    </h2>
                     <SecondaryButton v-if="!showWorkEdit" type="button" @click="openWorkEdit">編集</SecondaryButton>
                 </div>
                 <template v-if="!showWorkEdit">
-                    <dl class="px-4 py-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                        <div class="sm:col-span-2"><dt class="text-slate-500">作業名</dt><dd class="font-medium text-slate-800">{{ work.title ?? '—' }}</dd></div>
-                        <div class="sm:col-span-2">
-                            <dt class="text-slate-500">設備</dt>
-                            <dd class="text-slate-800 space-y-1">
-                                <template v-if="equipmentPaths.length">
-                                    <div v-for="(path, pathIdx) in equipmentPaths" :key="pathIdx" class="flex flex-wrap gap-x-1">
-                                        <template v-for="(eq, i) in path" :key="eq.id">
-                                            <span v-if="i < path.length - 1" class="text-slate-400">{{ eq.name }} › </span>
-                                            <span v-else class="font-semibold">{{ eq.name }}</span>
+                    <div class="p-4 space-y-4">
+                        <!-- 作業名・設備（メイン情報） -->
+                        <div class="space-y-3">
+                            <div class="flex gap-3">
+                                <div class="shrink-0 w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wide mb-0.5">作業名</p>
+                                    <p class="text-base font-semibold text-slate-800 leading-snug">{{ work.title ?? '—' }}</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-3">
+                                <div class="shrink-0 w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center">
+                                    <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-medium text-slate-500 uppercase tracking-wide mb-1">設備</p>
+                                    <div class="text-slate-800 space-y-1">
+                                        <template v-if="equipmentPaths.length">
+                                            <div v-for="(path, pathIdx) in equipmentPaths" :key="pathIdx" class="flex flex-wrap gap-x-1 items-baseline">
+                                                <template v-for="(eq, i) in path" :key="eq.id">
+                                                    <span v-if="i < path.length - 1" class="text-slate-400 text-sm">{{ eq.name }} › </span>
+                                                    <span v-else class="font-medium text-slate-800">{{ eq.name }}</span>
+                                                </template>
+                                            </div>
                                         </template>
+                                        <template v-else><span class="text-slate-500">—</span></template>
                                     </div>
-                                </template>
-                                <template v-else>—</template>
-                            </dd>
+                                </div>
+                            </div>
                         </div>
-                        <div><dt class="text-slate-500">ステータス</dt><dd class="font-medium text-slate-800"><Badge :label="work.work_status?.name ?? '—'" :color="work.work_status?.color" /></dd></div>
-                        <div><dt class="text-slate-500">優先度</dt><dd class="font-medium text-slate-800"><Badge :label="work.work_priority?.name ?? '—'" :color="work.work_priority?.color" /></dd></div>
-                        <div class="sm:col-span-2"><dt class="text-slate-500">作業目的</dt><dd class="flex flex-wrap gap-1"><Badge v-for="p in (work.work_purposes || [])" :key="p.id" :label="p.name" :color="p.color" /><span v-if="!(work.work_purposes?.length)" class="text-slate-600">—</span></dd></div>
-                        <div><dt class="text-slate-500">主担当</dt><dd class="font-medium text-slate-800"><Badge :label="work.assigned_user?.name ?? '—'" :color="work.assigned_user?.color" /></dd></div>
-                        <div><dt class="text-slate-500">追加担当</dt><dd class="flex flex-wrap gap-1"><Badge v-for="u in (work.additional_users || [])" :key="u.id" :label="u.name" :color="u.color" /><span v-if="!(work.additional_users?.length)" class="text-slate-600">—</span></dd></div>
-                        <div><dt class="text-slate-500">発生日</dt><dd class="font-medium text-slate-800">{{ formatDateTime(work.occurred_at) }}</dd></div>
-                        <div><dt class="text-slate-500">停止時間</dt><dd class="font-medium text-slate-800">{{ work.production_stop_minutes != null ? work.production_stop_minutes + '分' : '—' }}</dd></div>
-                        <div><dt class="text-slate-500">完了日時</dt><dd class="font-medium text-slate-800">{{ formatDateTime(work.completed_at) }}</dd></div>
-                        <div><dt class="text-slate-500">作成日時</dt><dd class="font-medium text-slate-800">{{ formatDateTime(work.created_at) }}</dd></div>
-                        <div><dt class="text-slate-500">更新日時</dt><dd class="font-medium text-slate-800">{{ formatDateTime(work.updated_at) }}</dd></div>
-                        <div v-if="work.note" class="sm:col-span-2"><dt class="text-slate-500">備考</dt><dd class="font-medium text-slate-800 whitespace-pre-wrap">{{ work.note }}</dd></div>
-                    </dl>
+
+                        <!-- ステータス・優先度・目的（一括表示） -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            <div class="flex gap-2.5 p-2.5 rounded-lg bg-slate-50/80 border border-slate-100">
+                                <div class="shrink-0 w-8 h-8 rounded-lg bg-white flex items-center justify-center border border-slate-200">
+                                    <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-medium text-slate-500 mb-0.5">ステータス</p>
+                                    <Badge :label="work.work_status?.name ?? '—'" :color="work.work_status?.color" />
+                                </div>
+                            </div>
+                            <div class="flex gap-2.5 p-2.5 rounded-lg bg-slate-50/80 border border-slate-100">
+                                <div class="shrink-0 w-8 h-8 rounded-lg bg-white flex items-center justify-center border border-slate-200">
+                                    <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-medium text-slate-500 mb-0.5">優先度</p>
+                                    <Badge :label="work.work_priority?.name ?? '—'" :color="work.work_priority?.color" />
+                                </div>
+                            </div>
+                            <div class="flex gap-2.5 p-2.5 rounded-lg bg-slate-50/80 border border-slate-100 sm:col-span-2 lg:col-span-1">
+                                <div class="shrink-0 w-8 h-8 rounded-lg bg-white flex items-center justify-center border border-slate-200">
+                                    <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" /></svg>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-medium text-slate-500 mb-0.5">作業目的</p>
+                                    <div class="flex flex-wrap gap-1">
+                                        <Badge v-for="p in (work.work_purposes || [])" :key="p.id" :label="p.name" :color="p.color" />
+                                        <span v-if="!(work.work_purposes?.length)" class="text-slate-500 text-sm">—</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 担当者 -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div class="flex gap-2.5 p-2.5 rounded-lg bg-slate-50/80 border border-slate-100">
+                                <div class="shrink-0 w-8 h-8 rounded-lg bg-white flex items-center justify-center border border-slate-200">
+                                    <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-medium text-slate-500 mb-0.5">主担当</p>
+                                    <Badge :label="work.assigned_user?.name ?? '—'" :color="work.assigned_user?.color" />
+                                </div>
+                            </div>
+                            <div class="flex gap-2.5 p-2.5 rounded-lg bg-slate-50/80 border border-slate-100">
+                                <div class="shrink-0 w-8 h-8 rounded-lg bg-white flex items-center justify-center border border-slate-200">
+                                    <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-medium text-slate-500 mb-0.5">追加担当</p>
+                                    <div class="flex flex-wrap gap-1">
+                                        <Badge v-for="u in (work.additional_users || [])" :key="u.id" :label="u.name" :color="u.color" />
+                                        <span v-if="!(work.additional_users?.length)" class="text-slate-500 text-sm">—</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 日時情報 -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                            <div class="flex gap-2.5 p-2.5 rounded-lg bg-slate-50/80 border border-slate-100">
+                                <div class="shrink-0 w-8 h-8 rounded-lg bg-white flex items-center justify-center border border-slate-200">
+                                    <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-medium text-slate-500 mb-0.5">発生日</p>
+                                    <p class="text-sm font-medium text-slate-800">{{ formatDateTime(work.occurred_at) }}</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-2.5 p-2.5 rounded-lg bg-slate-50/80 border border-slate-100">
+                                <div class="shrink-0 w-8 h-8 rounded-lg bg-white flex items-center justify-center border border-slate-200">
+                                    <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-medium text-slate-500 mb-0.5">停止時間</p>
+                                    <p class="text-sm font-medium text-slate-800">{{ work.production_stop_minutes != null ? work.production_stop_minutes + '分' : '—' }}</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-2.5 p-2.5 rounded-lg bg-slate-50/80 border border-slate-100">
+                                <div class="shrink-0 w-8 h-8 rounded-lg bg-white flex items-center justify-center border border-slate-200">
+                                    <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-medium text-slate-500 mb-0.5">完了日時</p>
+                                    <p class="text-sm font-medium text-slate-800">{{ formatDateTime(work.completed_at) }}</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-2.5 p-2.5 rounded-lg bg-slate-50/80 border border-slate-100 sm:col-span-2 lg:col-span-1">
+                                <div class="shrink-0 w-8 h-8 rounded-lg bg-white flex items-center justify-center border border-slate-200">
+                                    <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <p class="text-xs font-medium text-slate-500 mb-0.5">作成・更新</p>
+                                    <p class="text-sm font-medium text-slate-800">{{ formatDateTime(work.updated_at) }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 備考 -->
+                        <div v-if="work.note" class="flex gap-2.5 p-3 rounded-lg bg-amber-50/80 border border-amber-100">
+                            <div class="shrink-0 w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                                <svg class="w-4 h-4 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" /></svg>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-xs font-medium text-amber-800 uppercase tracking-wide mb-1">備考</p>
+                                <p class="text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">{{ work.note }}</p>
+                            </div>
+                        </div>
+                    </div>
                 </template>
                 <!-- 編集モード（インライン・青系） -->
                 <form v-else @submit.prevent="submitWorkEdit" class="p-5 rounded-b-xl border-t-0 border-2 border-indigo-200 bg-indigo-50/80 space-y-4 shadow-sm">
@@ -659,7 +780,10 @@ function submitWorkEdit() {
             <!-- 作業内容 -->
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                    <h2 class="text-sm font-semibold text-slate-800">作業内容</h2>
+                    <h2 class="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+                        作業内容
+                    </h2>
                     <SecondaryButton type="button" @click="showContentForm = !showContentForm">
                         {{ showContentForm ? '閉じる' : '追加' }}
                     </SecondaryButton>
@@ -849,7 +973,10 @@ function submitWorkEdit() {
             <!-- 使用部品 -->
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                    <h2 class="text-sm font-semibold text-slate-800">使用部品</h2>
+                    <h2 class="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
+                        使用部品
+                    </h2>
                     <SecondaryButton type="button" @click="showUsedPartForm = !showUsedPartForm">
                         {{ showUsedPartForm ? '閉じる' : '追加' }}
                     </SecondaryButton>
@@ -972,7 +1099,10 @@ function submitWorkEdit() {
             <!-- 費用 -->
             <div ref="costFormSectionRef" class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                    <h2 class="text-sm font-semibold text-slate-800">費用</h2>
+                    <h2 class="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        費用
+                    </h2>
                     <SecondaryButton type="button" @click="showCostForm = !showCostForm">
                         {{ showCostForm ? '閉じる' : '追加' }}
                     </SecondaryButton>
@@ -1054,7 +1184,10 @@ function submitWorkEdit() {
             <!-- 添付資料（独立ブロック・最下部） -->
             <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                 <div class="px-4 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                    <h2 class="text-sm font-semibold text-slate-800">添付資料</h2>
+                    <h2 class="text-sm font-semibold text-slate-800 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                        添付資料
+                    </h2>
                     <SecondaryButton v-if="!showSummaryDocForm" type="button" @click="showSummaryDocForm = true">＋ 資料を追加</SecondaryButton>
                     <button v-else type="button" class="text-sm text-slate-500 hover:text-slate-700" @click="showSummaryDocForm = false">閉じる</button>
                 </div>
@@ -1102,9 +1235,9 @@ function submitWorkEdit() {
             </div>
             </div>
 
-            <!-- 右: 履歴・コメントブロック（約30%） -->
-            <div class="w-[30%] min-w-[280px] shrink-0">
-                <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden sticky top-4">
+            <!-- 右: 履歴・コメント・関連作業ブロック（約30%） -->
+            <div class="w-[30%] min-w-[280px] shrink-0 space-y-4">
+                <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
                     <div class="flex border-b border-slate-200">
                         <button
                             type="button"
@@ -1207,6 +1340,45 @@ function submitWorkEdit() {
                             </template>
                             <p v-else class="text-slate-500 text-sm">コメントはありません</p>
                         </div>
+                    </div>
+                </div>
+
+                <!-- 関連作業 -->
+                <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    <h3 class="px-4 py-3 text-sm font-semibold text-slate-800 border-b border-slate-200 flex items-center gap-2">
+                        <svg class="w-5 h-5 text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>
+                        関連作業
+                    </h3>
+                    <div class="max-h-[40vh] overflow-y-auto p-4">
+                        <template v-if="(relatedWorks ?? []).length">
+                            <div
+                                v-for="rw in (relatedWorks ?? [])"
+                                :key="rw.id"
+                                class="text-sm border-b border-slate-100 pb-3 last:border-0 cursor-pointer hover:bg-slate-50 -mx-2 px-2 rounded"
+                                @click="router.visit(route('work.works.show', rw.id))"
+                            >
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="text-indigo-600 hover:text-indigo-800 font-medium">{{ rw.title }}</span>
+                                    <Badge v-if="rw.work_status?.name" :label="rw.work_status.name" :color="rw.work_status.color" />
+                                </div>
+                                <div class="text-slate-500 text-xs mb-1">
+                                    <template v-if="(rw.equipments ?? []).length">
+                                        <template v-for="(eq, ei) in rw.equipments" :key="eq.id">
+                                            <span v-if="ei > 0" class="text-slate-300"> / </span>
+                                            <template v-for="(p, pi) in buildEquipmentPath(eq)" :key="p.id">
+                                                <span v-if="pi < buildEquipmentPath(eq).length - 1">{{ p.name }} › </span>
+                                                <span v-else class="text-slate-600">{{ p.name }}</span>
+                                            </template>
+                                        </template>
+                                    </template>
+                                    <span v-else>—</span>
+                                </div>
+                                <div class="text-slate-400 text-xs">
+                                    発生日: {{ formatDate(rw.occurred_at) }}<template v-if="rw.completed_at">　完了日: {{ formatDate(rw.completed_at) }}</template>
+                                </div>
+                            </div>
+                        </template>
+                        <p v-else class="text-slate-500 text-sm">関連する作業はありません</p>
                     </div>
                 </div>
             </div>

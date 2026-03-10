@@ -5,16 +5,29 @@ import PlusIcon from '@/Components/Icons/PlusIcon.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { watch } from 'vue';
 
 const props = defineProps({
     works: Object,
-    equipments: Array,
+    parentEquipmentOptions: Array,
+    equipmentChildrenByParentId: Object,
     workStatuses: Array,
     workPurposes: Array,
     users: Array,
-    sort_key: { type: String, default: 'created_at' },
+    sort_key: { type: String, default: 'occurred_at' },
     sort_order: { type: String, default: 'desc' },
+    filters: {
+        type: Object,
+        default: () => ({
+            parent_equipment_id: '',
+            equipment_id: '',
+            work_status_id: '',
+            work_purpose_id: '',
+            assigned_user_id: '',
+            occurred_from: '',
+            occurred_to: '',
+        }),
+    },
 });
 
 const sortKeys = {
@@ -24,7 +37,7 @@ const sortKeys = {
     work_status_id: 'work_status_id',
     work_priority_id: 'work_priority_id',
     assigned_user_id: 'assigned_user_id',
-    created_at: 'created_at',
+    occurred_at: 'occurred_at',
 };
 
 function sortBy(key) {
@@ -55,13 +68,30 @@ function equipmentPathDisplay(work) {
 }
 
 const filterForm = useForm({
-    equipment_id: '',
-    work_status_id: '',
-    work_purpose_id: '',
-    assigned_user_id: '',
-    occurred_from: '',
-    occurred_to: '',
+    parent_equipment_id: props.filters?.parent_equipment_id ?? '',
+    equipment_id: props.filters?.equipment_id ?? '',
+    work_status_id: props.filters?.work_status_id ?? '',
+    work_purpose_id: props.filters?.work_purpose_id ?? '',
+    assigned_user_id: props.filters?.assigned_user_id ?? '',
+    occurred_from: props.filters?.occurred_from ?? '',
+    occurred_to: props.filters?.occurred_to ?? '',
 });
+
+watch(
+    () => props.filters,
+    (newFilters) => {
+        if (newFilters) {
+            filterForm.parent_equipment_id = newFilters.parent_equipment_id ?? '';
+            filterForm.equipment_id = newFilters.equipment_id ?? '';
+            filterForm.work_status_id = newFilters.work_status_id ?? '';
+            filterForm.work_purpose_id = newFilters.work_purpose_id ?? '';
+            filterForm.assigned_user_id = newFilters.assigned_user_id ?? '';
+            filterForm.occurred_from = newFilters.occurred_from ?? '';
+            filterForm.occurred_to = newFilters.occurred_to ?? '';
+        }
+    },
+    { deep: true },
+);
 
 function applyFilter() {
     filterForm.get(route('work.works.index'), {
@@ -73,6 +103,17 @@ function applyFilter() {
 function resetFilter() {
     filterForm.reset();
     router.get(route('work.works.index'));
+}
+
+/**
+ * 親設備で選択した設備は表示せず、その親を親に持つ設備（直接の子）のみを返す
+ */
+function equipmentOptionsForParent(parentId) {
+    if (!parentId) return [];
+    const map = props.equipmentChildrenByParentId ?? {};
+    const opts = map[String(parentId)] ?? [];
+    const pid = Number(parentId);
+    return opts.filter((opt) => opt.id !== pid && opt.depth === 1);
 }
 </script>
 
@@ -95,10 +136,25 @@ function resetFilter() {
                 <h2 class="text-sm font-semibold text-slate-800 mb-3">絞り込み</h2>
                 <form @submit.prevent="applyFilter" class="flex flex-wrap gap-3 items-end">
                     <div class="min-w-[140px]">
-                        <label class="block text-xs text-slate-500 mb-1">設備</label>
-                        <select v-model="filterForm.equipment_id" class="block w-full rounded-md border-slate-300 text-sm">
+                        <label class="block text-xs text-slate-500 mb-1">親設備</label>
+                        <select
+                            v-model="filterForm.parent_equipment_id"
+                            class="block w-full rounded-md border-slate-300 text-sm"
+                            @change="filterForm.equipment_id = ''"
+                        >
                             <option value="">すべて</option>
-                            <option v-for="e in (equipments || [])" :key="e.id" :value="e.id">{{ e.name }}</option>
+                            <option v-for="opt in (parentEquipmentOptions || [])" :key="opt.id" :value="String(opt.id)">{{ opt.name }}</option>
+                        </select>
+                    </div>
+                    <div class="min-w-[140px]">
+                        <label class="block text-xs text-slate-500 mb-1">設備</label>
+                        <select
+                            v-model="filterForm.equipment_id"
+                            class="block w-full rounded-md border-slate-300 text-sm"
+                            :disabled="!filterForm.parent_equipment_id"
+                        >
+                            <option value="">{{ filterForm.parent_equipment_id ? 'すべて（親以下の全設備）' : '親設備を選択' }}</option>
+                            <option v-for="opt in equipmentOptionsForParent(filterForm.parent_equipment_id)" :key="opt.id" :value="String(opt.id)">{{ opt.display_label ?? opt.name }}</option>
                         </select>
                     </div>
                     <div class="min-w-[120px]">
@@ -199,10 +255,10 @@ function resetFilter() {
                                 </th>
                                 <th
                                     class="px-4 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-slate-100 select-none"
-                                    @click="sortBy('created_at')"
+                                    @click="sortBy('occurred_at')"
                                 >
-                                    <span class="inline-flex items-center gap-1">登録日
-                                        <template v-if="sort_key === 'created_at'">
+                                    <span class="inline-flex items-center gap-1">発生日
+                                        <template v-if="sort_key === 'occurred_at'">
                                             <span v-if="sort_order === 'asc'" class="text-indigo-600">↑</span>
                                             <span v-else class="text-indigo-600">↓</span>
                                         </template>
@@ -251,7 +307,7 @@ function resetFilter() {
                                     <Badge :label="work.assigned_user?.name ?? '—'" :color="work.assigned_user?.color" />
                                 </td>
                                 <td class="px-4 py-3 text-sm text-slate-600">
-                                    {{ work.created_at ? new Date(work.created_at).toLocaleDateString('ja-JP') : '—' }}
+                                    {{ work.occurred_at ? new Date(work.occurred_at).toLocaleDateString('ja-JP') : '—' }}
                                 </td>
                             </tr>
                             <tr v-if="!works.data?.length">
