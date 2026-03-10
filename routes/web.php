@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AnalysisController;
 use App\Http\Controllers\ApiTestController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\MasterController;
@@ -44,6 +45,18 @@ Route::middleware(['auth', 'verified'])->prefix('work')->name('work.')->group(fu
     Route::post('works/{work}/comments', [WorkController::class, 'storeComment'])->name('works.comments.store');
     Route::put('works/{work}/comments/{activity}', [WorkController::class, 'updateComment'])->name('works.comments.update');
     Route::delete('works/{work}/comments/{activity}', [WorkController::class, 'destroyComment'])->name('works.comments.destroy');
+});
+
+// 分析 /analysis
+Route::middleware(['auth', 'verified'])->prefix('analysis')->name('analysis.')->group(function () {
+    Route::get('/', [AnalysisController::class, 'index'])->name('index');
+    Route::get('/work-volume', [AnalysisController::class, 'workVolume'])->name('work-volume');
+    Route::get('/cost', [AnalysisController::class, 'cost'])->name('cost');
+    Route::get('/equipment', [AnalysisController::class, 'equipment'])->name('equipment');
+    Route::get('/users', [AnalysisController::class, 'users'])->name('users');
+    Route::get('/parts', [AnalysisController::class, 'parts'])->name('parts');
+    Route::get('/vendors', [AnalysisController::class, 'vendors'])->name('vendors');
+    Route::get('/repair-trends', [AnalysisController::class, 'repairTrends'])->name('repair-trends');
 });
 
 // APIテスト（Conservation API）

@@ -74,6 +74,7 @@ const isActive = (routeName) => {
     const segments = path.split('/').filter(Boolean);
     if (routeName === 'dashboard') return path === '/' || path === '';
     if (routeName === 'work.works.index' || routeName === 'work.works.create') return segments[0] === 'work';
+    if (routeName === 'analysis.index') return segments[0] === 'analysis';
     if (routeName === 'master.top') return segments[0] === 'master' && segments.length <= 1;
     return false;
 };
@@ -85,6 +86,32 @@ const isMasterChildActive = (key) => {
     if (segments[0] !== 'master') return false;
     return segments[1] === key;
 };
+
+const isAnalysisChildActive = (key) => {
+    const path = page.url;
+    const segments = path.split('/').filter(Boolean);
+    if (segments[0] !== 'analysis') return false;
+    if (segments.length <= 1) return key === 'index';
+    return segments[1] === key;
+};
+
+const analysisChildren = computed(() => {
+    const list = [
+        { key: 'index', label: 'サマリー', href: () => route('analysis.index') },
+        { key: 'work-volume', label: '作業量分析', href: () => route('analysis.work-volume') },
+        { key: 'cost', label: '費用分析', href: () => route('analysis.cost') },
+        { key: 'equipment', label: '設備分析', href: () => route('analysis.equipment') },
+        { key: 'users', label: '担当者分析', href: () => route('analysis.users') },
+        { key: 'parts', label: '部品使用分析', href: () => route('analysis.parts') },
+        { key: 'vendors', label: '業者分析', href: () => route('analysis.vendors') },
+        { key: 'repair-trends', label: '修理傾向分析', href: () => route('analysis.repair-trends') },
+    ];
+    return list.map(({ key, label, href }) => ({
+        href: href(),
+        label,
+        active: isAnalysisChildActive(key),
+    }));
+});
 
 const masterChildren = computed(() => {
     const list = [
@@ -121,6 +148,24 @@ const breadcrumbs = computed(() => {
     }
 
     const first = segments[0];
+    if (first === 'analysis') {
+        items.push({ label: '分析', href: route('analysis.index') });
+        const analysisLabels = {
+            'work-volume': '作業量分析',
+            cost: '費用分析',
+            equipment: '設備分析',
+            users: '担当者分析',
+            parts: '部品使用分析',
+            vendors: '業者分析',
+            'repair-trends': '修理傾向分析',
+        };
+        const second = segments[1];
+        if (second && second !== 'index') {
+            items.push({ label: analysisLabels[second] || second });
+        }
+        return items;
+    }
+
     if (first === 'work') {
         items.push({ label: '作業', href: route('work.works.index') });
         if (segments[1] === 'works') {
@@ -189,9 +234,16 @@ const breadcrumbs = computed(() => {
 
 const navItems = computed(() => {
     const master = masterChildren.value;
+    const analysis = analysisChildren.value;
     return [
         { href: route('dashboard'), label: 'ダッシュボード', active: isActive('dashboard'), children: [] },
         { href: route('work.works.index'), label: '作業', active: isActive('work.works.index'), children: [] },
+        {
+            href: route('analysis.index'),
+            label: '分析',
+            active: isActive('analysis.index') || analysis.some((c) => c.active),
+            children: analysis,
+        },
         {
             href: route('master.top'),
             label: 'マスタ',
@@ -338,6 +390,13 @@ const navItems = computed(() => {
                             <span>作業</span>
                         </SidebarNavLink>
                         <SidebarNavLink
+                            :href="route('analysis.index')"
+                            :active="isActive('analysis.index')"
+                            @click="sidebarOpen = false"
+                        >
+                            <span>分析</span>
+                        </SidebarNavLink>
+                        <SidebarNavLink
                             :href="route('master.top')"
                             :active="isActive('master.index')"
                             @click="sidebarOpen = false"
@@ -345,6 +404,22 @@ const navItems = computed(() => {
                             <span>マスタ</span>
                         </SidebarNavLink>
                         <div class="border-t border-slate-700 pt-2 mt-2 pl-3 space-y-0.5">
+                            <p class="mb-1 text-xs font-medium text-slate-500">分析</p>
+                            <Link
+                                v-for="child in analysisChildren"
+                                :key="'analysis-' + child.href"
+                                :href="child.href"
+                                @click="sidebarOpen = false"
+                                :class="[
+                                    'block py-2 text-sm',
+                                    child.active ? 'text-emerald-400' : 'text-slate-400 hover:text-slate-200',
+                                ]"
+                            >
+                                {{ child.label }}
+                            </Link>
+                        </div>
+                        <div class="border-t border-slate-700 pt-2 mt-2 pl-3 space-y-0.5">
+                            <p class="mb-1 text-xs font-medium text-slate-500">マスタ</p>
                             <Link
                                 v-for="child in masterChildren"
                                 :key="child.href"
