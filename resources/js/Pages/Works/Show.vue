@@ -155,9 +155,9 @@ function removeContentImage(idx) {
 }
 
 function setEndAndComplete() {
-    const completedAt = contentForm.ended_at || nowAsDatetimeLocal();
-    contentForm.ended_at = completedAt;
-    router.put(route('work.works.complete', props.work.id), { completed_at: completedAt }, {
+    const endedAt = contentForm.ended_at == null ? '' : String(contentForm.ended_at).trim();
+    if (!endedAt) return;
+    router.put(route('work.works.complete', props.work.id), { completed_at: endedAt }, {
         preserveScroll: true,
         onSuccess: () => { /* 作業を完了に更新済み */ },
     });
@@ -859,7 +859,7 @@ function submitWorkEdit() {
                                     <InputLabel value="終了日時" />
                                     <TextInput v-model="contentForm.ended_at" type="datetime-local" class="mt-1 block w-full rounded-md border-indigo-200" />
                                 </div>
-                                <button type="button" class="p-2 rounded-md border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 shrink-0" title="ステータスを完了にして完了日時を上書き" @click="setEndAndComplete">
+                                <button type="button" class="p-2 rounded-md border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed" title="ステータスを完了にし、作業概要の完了日時をこの終了日時で上書きする" :disabled="!contentForm.ended_at || !String(contentForm.ended_at).trim()" @click="setEndAndComplete">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>

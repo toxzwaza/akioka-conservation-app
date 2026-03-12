@@ -112,14 +112,11 @@ function nowAsDatetimeLocal() {
     return `${y}-${m}-${day}T${h}:${min}`;
 }
 
-/** 作業内容の終了日時ボタン: この行の終了日時を現在にセット。作業概要の完了日時は未入力時のみセットし、ステータスは常に完了にする */
+/** 作業内容の終了日時ボタン: 終了日時が入力されている行で、その値を作業概要の完了日時に上書きし、ステータスを完了にする（値セットのみ、API は呼ばない） */
 function setEndAndComplete(row) {
-    const now = nowAsDatetimeLocal();
-    row.ended_at = now;
-    const completedAtEmpty = form.completed_at == null || String(form.completed_at).trim() === '';
-    if (completedAtEmpty) {
-        form.completed_at = now;
-    }
+    const endAt = row.ended_at == null ? '' : String(row.ended_at).trim();
+    if (!endAt) return;
+    form.completed_at = endAt;
     if (completedStatusId.value) {
         form.work_status_id = completedStatusId.value;
     }
@@ -618,7 +615,7 @@ function submit() {
                                                 class="mt-1 block w-full"
                                             />
                                         </div>
-                                        <button type="button" class="p-2 rounded-md border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 shrink-0" title="終了日時に現在時刻をセット。完了日時が未入力ならセットし、ステータスを完了にする" @click="setEndAndComplete(row)">
+                                        <button type="button" class="p-2 rounded-md border border-indigo-300 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed" title="ステータスを完了にし、作業概要の完了日時をこの終了日時で上書きする" :disabled="!row.ended_at || !String(row.ended_at).trim()" @click="setEndAndComplete(row)">
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                             </svg>

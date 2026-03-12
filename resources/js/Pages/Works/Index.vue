@@ -105,6 +105,40 @@ function resetFilter() {
     router.get(route('work.works.index'));
 }
 
+/** 指定ページのURL（フィルター・ソートを維持） */
+function pageUrl(page) {
+    const params = {
+        ...filterForm.data(),
+        sort_key: props.sort_key,
+        sort_order: props.sort_order,
+        page: String(page),
+    };
+    Object.keys(params).forEach((k) => {
+        if (params[k] === '' || params[k] == null) delete params[k];
+    });
+    const query = new URLSearchParams(params).toString();
+    return route('work.works.index') + (query ? '?' + query : '');
+}
+
+/** 表示するページ番号の配列（省略記号は null） */
+function paginationPages() {
+    const current = props.works?.current_page ?? 1;
+    const last = props.works?.last_page ?? 1;
+    if (last <= 1) return [];
+    if (last <= 7) return Array.from({ length: last }, (_, i) => i + 1);
+    const pages = new Set([1, last]);
+    for (let i = Math.max(1, current - 2); i <= Math.min(last, current + 2); i++) pages.add(i);
+    const sorted = Array.from(pages).sort((a, b) => a - b);
+    const result = [];
+    let prev = 0;
+    for (const p of sorted) {
+        if (p > prev + 1) result.push(null); // 省略
+        result.push(p);
+        prev = p;
+    }
+    return result;
+}
+
 /**
  * 親設備で選択した設備は表示せず、その親を親に持つ設備（直接の子）のみを返す
  */
@@ -319,28 +353,51 @@ function equipmentOptionsForParent(parentId) {
                     </table>
                 </div>
                 <div
-                    v-if="works.data?.length && (works.prev_page_url || works.next_page_url)"
-                    class="border-t border-slate-200 px-4 py-3 flex items-center justify-between"
+                    v-if="works.data?.length && works.last_page > 0"
+                    class="border-t border-slate-200 px-4 py-3 flex flex-wrap items-center justify-between gap-3"
                 >
                     <p class="text-sm text-slate-600">
                         {{ works.from }} ～ {{ works.to }} 件目 / 全 {{ works.total }} 件
                     </p>
-                    <div class="flex gap-2">
+                    <nav class="flex items-center gap-1" aria-label="ページネーション">
                         <Link
                             v-if="works.prev_page_url"
                             :href="works.prev_page_url"
                             class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                            aria-label="前のページ"
                         >
                             前へ
                         </Link>
+                        <template v-for="(p, idx) in paginationPages()" :key="idx">
+                            <span
+                                v-if="p === null"
+                                class="px-2 py-1.5 text-sm text-slate-400"
+                                aria-hidden="true"
+                            >
+                                …
+                            </span>
+                            <Link
+                                v-else
+                                :href="pageUrl(p)"
+                                class="min-w-[2.25rem] rounded-md border px-2.5 py-1.5 text-center text-sm transition-colors"
+                                :class="p === works.current_page
+                                    ? 'border-indigo-500 bg-indigo-50 text-indigo-700 font-medium'
+                                    : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'"
+                                :aria-label="`${p}ページ目`"
+                                :aria-current="p === works.current_page ? 'page' : undefined"
+                            >
+                                {{ p }}
+                            </Link>
+                        </template>
                         <Link
                             v-if="works.next_page_url"
                             :href="works.next_page_url"
                             class="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
+                            aria-label="次のページ"
                         >
                             次へ
                         </Link>
-                    </div>
+                    </nav>
                 </div>
             </div>
         </div>
