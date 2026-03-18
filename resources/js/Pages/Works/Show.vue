@@ -200,6 +200,9 @@ function submitContent() {
     };
     if (hasImages || isUpdate) {
         const fd = new FormData();
+        if (isUpdate) {
+            fd.append('_method', 'PUT');
+        }
         (contentForm.work_content_tag_ids || []).forEach((id) => fd.append('work_content_tag_ids[]', id));
         (contentForm.repair_type_ids || []).forEach((id) => fd.append('repair_type_ids[]', id));
         fd.append('content', contentForm.content);
@@ -208,7 +211,7 @@ function submitContent() {
         (contentForm.images || []).forEach((f) => fd.append('images[]', f));
         contentForm.processing = true;
         if (isUpdate) {
-            router.put(route('work.works.work-contents.update', [props.work.id, editingContentId.value]), fd, {
+            router.post(route('work.works.work-contents.update', [props.work.id, editingContentId.value]), fd, {
                 forceFormData: true,
                 preserveScroll: true,
                 onFinish: () => { contentForm.processing = false; contentForm.images = []; },
