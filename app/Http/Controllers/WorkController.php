@@ -25,9 +25,11 @@ use App\Models\WorkStatus;
 use App\Models\WorkUsedPart;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class WorkController extends Controller
@@ -933,21 +935,54 @@ class WorkController extends Controller
      */
     public function storeWorkContent(Request $request, Work $work)
     {
-        $validated = $request->validate([
-            'work_content_tag_ids' => ['nullable', 'array'],
-            'work_content_tag_ids.*' => ['exists:work_content_tags,id'],
-            'repair_type_ids' => ['nullable', 'array'],
-            'repair_type_ids.*' => ['exists:repair_types,id'],
-            'content' => ['required', 'string'],
-            'started_at' => ['nullable', 'date'],
-            'ended_at' => ['nullable', 'date'],
-            'images' => ['nullable', 'array'],
-            'images.*' => ['nullable', 'file', 'image', 'max:10240'],
-        ]);
+        try {
+            $validated = $request->validate([
+                'work_content_tag_ids' => ['nullable', 'array'],
+                'work_content_tag_ids.*' => ['exists:work_content_tags,id'],
+                'repair_type_ids' => ['nullable', 'array'],
+                'repair_type_ids.*' => ['exists:repair_types,id'],
+                'content' => ['required', 'string'],
+                'started_at' => ['nullable', 'date'],
+                'ended_at' => ['nullable', 'date'],
+                'images' => ['nullable', 'array'],
+                'images.*' => ['nullable', 'file', 'image', 'max:10240'],
+            ]);
+        } catch (ValidationException $e) {
+            $logContext = [
+                'work_id' => $work->id,
+                'errors' => $e->errors(),
+                'message' => $e->getMessage(),
+            ];
+            // 「failed to upload」の場合は PHP のアップロードエラー詳細を追記
+            $fileErrors = $e->validator->errors()->get('images.*') ?: $e->validator->errors()->get('images');
+            if ($fileErrors && is_array($fileErrors)) {
+                $uploadDetails = [];
+                $files = $request->file('images');
+                if (is_array($files)) {
+                    foreach ($files as $i => $file) {
+                        if ($file) {
+                            $uploadDetails["images.{$i}"] = [
+                                'original_name' => $file->getClientOriginalName(),
+                                'size' => $file->getSize(),
+                                'client_mime' => $file->getClientMimeType(),
+                                'valid' => $file->isValid(),
+                                'error' => $file->isValid() ? null : $file->getErrorMessage(),
+                            ];
+                        }
+                    }
+                }
+                if ($uploadDetails !== []) {
+                    $logContext['upload_details'] = $uploadDetails;
+                }
+            }
+            Log::warning('作業内容登録 バリデーションエラー', $logContext);
+            throw $e;
+        }
 
         $tagIds = array_filter(array_map('intval', $validated['work_content_tag_ids'] ?? []));
         $repairIds = array_filter(array_map('intval', $validated['repair_type_ids'] ?? []));
         if (count($tagIds) === 0 && count($repairIds) === 0) {
+            Log::warning('作業内容登録 タグ未選択', ['work_id' => $work->id]);
             return redirect()->back()->withErrors(['work_content_tag_ids' => '作業タグを1つ以上選択してください。']);
         }
 
@@ -965,19 +1000,29 @@ class WorkController extends Controller
         $photoType = AttachmentType::where('name', '写真')->first();
         if ($photoType) {
             $files = $request->file('images') ?? [];
-            foreach (is_array($files) ? $files : [] as $file) {
-                if ($file && $file->isValid()) {
-                    $dir = 'work_attachments/' . $work->id;
-                    $name = Str::uuid() . '_' . $file->getClientOriginalName();
-                    $path = $file->storeAs($dir, $name, 'public');
-                    WorkAttachment::create([
-                        'work_id' => $work->id,
-                        'work_content_id' => $wc->id,
-                        'attachment_type_id' => $photoType->id,
-                        'path' => $path,
-                        'original_name' => $file->getClientOriginalName(),
-                        'uploaded_by' => auth()->id(),
-                    ]);
+            foreach (is_array($files) ? $files : [] as $index => $file) {
+                if ($file) {
+                    if ($file->isValid()) {
+                        $dir = 'work_attachments/' . $work->id;
+                        $name = Str::uuid() . '_' . $file->getClientOriginalName();
+                        $path = $file->storeAs($dir, $name, 'public');
+                        WorkAttachment::create([
+                            'work_id' => $work->id,
+                            'work_content_id' => $wc->id,
+                            'attachment_type_id' => $photoType->id,
+                            'path' => $path,
+                            'original_name' => $file->getClientOriginalName(),
+                            'uploaded_by' => auth()->id(),
+                        ]);
+                    } else {
+                        Log::warning('作業内容登録 画像アップロード失敗（無効なファイル）', [
+                            'work_id' => $work->id,
+                            'work_content_id' => $wc->id,
+                            'image_index' => $index,
+                            'original_name' => $file->getClientOriginalName(),
+                            'error' => $file->getErrorMessage(),
+                        ]);
+                    }
                 }
             }
         }
