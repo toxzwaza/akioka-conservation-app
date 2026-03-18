@@ -16,6 +16,8 @@ class TrustProxies extends Middleware
 
     /**
      * The headers that should be used to detect proxies.
+     * For HTTPS behind a reverse proxy (e.g. Nginx), ensure the proxy sends
+     * X-Forwarded-Proto: https so that Laravel generates correct URLs.
      *
      * @var int
      */
