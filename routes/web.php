@@ -38,6 +38,9 @@ Route::middleware(['auth', 'verified'])->prefix('work')->name('work.')->group(fu
     Route::put('works/{work}/complete', [WorkController::class, 'complete'])->name('works.complete');
     Route::put('works/{work}/work-contents/reorder', [WorkController::class, 'reorderWorkContents'])->name('works.work-contents.reorder');
     Route::post('works/{work}/work-contents', [WorkController::class, 'storeWorkContent'])->name('works.work-contents.store');
+    Route::put('works/{work}/work-contents/{workContent}', [WorkController::class, 'updateWorkContent'])->name('works.work-contents.update');
+    Route::delete('works/{work}/work-contents/{workContent}', [WorkController::class, 'destroyWorkContent'])->name('works.work-contents.destroy');
+    Route::delete('works/{work}/work-attachments/{workAttachment}', [WorkController::class, 'destroyWorkAttachment'])->name('works.work-attachments.destroy');
     Route::post('works/{work}/work-used-parts', [WorkController::class, 'storeWorkUsedPart'])->name('works.work-used-parts.store');
     Route::delete('works/{work}/work-used-parts/{workUsedPart}', [WorkController::class, 'destroyWorkUsedPart'])->name('works.work-used-parts.destroy');
     Route::post('works/{work}/work-costs', [WorkController::class, 'storeWorkCost'])->name('works.work-costs.store');

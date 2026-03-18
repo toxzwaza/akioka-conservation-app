@@ -1032,6 +1032,114 @@ class WorkController extends Controller
     }
 
     /**
+     * 作業内容を1件更新（タグ・修理内容・内容・日時・新規画像の追加）
+     */
+    public function updateWorkContent(Request $request, Work $work, WorkContent $workContent)
+    {
+        if ((int) $workContent->work_id !== (int) $work->id) {
+            abort(404);
+        }
+
+        try {
+            $validated = $request->validate([
+                'work_content_tag_ids' => ['nullable', 'array'],
+                'work_content_tag_ids.*' => ['exists:work_content_tags,id'],
+                'repair_type_ids' => ['nullable', 'array'],
+                'repair_type_ids.*' => ['exists:repair_types,id'],
+                'content' => ['required', 'string'],
+                'started_at' => ['nullable', 'date'],
+                'ended_at' => ['nullable', 'date'],
+                'images' => ['nullable', 'array'],
+                'images.*' => ['nullable', 'file', 'image', 'max:10240'],
+            ]);
+        } catch (ValidationException $e) {
+            Log::warning('作業内容更新 バリデーションエラー', [
+                'work_id' => $work->id,
+                'work_content_id' => $workContent->id,
+                'errors' => $e->errors(),
+            ]);
+            throw $e;
+        }
+
+        $tagIds = array_filter(array_map('intval', $validated['work_content_tag_ids'] ?? []));
+        $repairIds = array_filter(array_map('intval', $validated['repair_type_ids'] ?? []));
+        if (count($tagIds) === 0 && count($repairIds) === 0) {
+            return redirect()->back()->withErrors(['work_content_tag_ids' => '作業タグを1つ以上選択してください。']);
+        }
+
+        $workContent->update([
+            'content' => $validated['content'],
+            'started_at' => $validated['started_at'] ?? null,
+            'ended_at' => $validated['ended_at'] ?? null,
+        ]);
+        $workContent->workContentTags()->sync($tagIds);
+        $workContent->repairTypes()->sync($repairIds);
+
+        $photoType = AttachmentType::where('name', '写真')->first();
+        if ($photoType) {
+            $files = $request->file('images') ?? [];
+            foreach (is_array($files) ? $files : [] as $file) {
+                if ($file && $file->isValid()) {
+                    $dir = 'work_attachments/' . $work->id;
+                    $name = Str::uuid() . '_' . $file->getClientOriginalName();
+                    $path = $file->storeAs($dir, $name, 'public');
+                    WorkAttachment::create([
+                        'work_id' => $work->id,
+                        'work_content_id' => $workContent->id,
+                        'attachment_type_id' => $photoType->id,
+                        'path' => $path,
+                        'original_name' => $file->getClientOriginalName(),
+                        'uploaded_by' => auth()->id(),
+                    ]);
+                }
+            }
+        }
+
+        $this->recordWorkActivity($work, 'その他', '作業内容を更新しました。');
+        return redirect()->route('work.works.show', $work)->with('status', '作業内容を更新しました。');
+    }
+
+    /**
+     * 作業内容を1件削除（紐づく添付も削除）
+     */
+    public function destroyWorkContent(Work $work, WorkContent $workContent)
+    {
+        if ((int) $workContent->work_id !== (int) $work->id) {
+            abort(404);
+        }
+
+        $attachments = WorkAttachment::where('work_content_id', $workContent->id)->get();
+        foreach ($attachments as $att) {
+            if ($att->path && Storage::disk('public')->exists($att->path)) {
+                Storage::disk('public')->delete($att->path);
+            }
+            $att->delete();
+        }
+        $workContent->delete();
+
+        $this->recordWorkActivity($work, 'その他', '作業内容を削除しました。');
+        return redirect()->route('work.works.show', $work)->with('status', '作業内容を削除しました。');
+    }
+
+    /**
+     * 作業添付（画像など）を1件削除
+     */
+    public function destroyWorkAttachment(Work $work, WorkAttachment $workAttachment)
+    {
+        if ((int) $workAttachment->work_id !== (int) $work->id) {
+            abort(404);
+        }
+
+        if ($workAttachment->path && Storage::disk('public')->exists($workAttachment->path)) {
+            Storage::disk('public')->delete($workAttachment->path);
+        }
+        $workAttachment->delete();
+
+        $this->recordWorkActivity($work, 'その他', '添付画像を削除しました。');
+        return redirect()->route('work.works.show', $work)->with('status', '画像を削除しました。');
+    }
+
+    /**
      * 使用部品を1件追加（external_id ありの場合は在庫減算を実行）
      */
     public function storeWorkUsedPart(Request $request, Work $work, StockDeductionService $deductionService)

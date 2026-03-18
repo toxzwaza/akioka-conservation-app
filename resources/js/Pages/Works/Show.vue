@@ -32,6 +32,7 @@ const page = usePage();
 const authUser = computed(() => page.props.auth?.user ?? null);
 const activeTab = ref('history'); // 'history' | 'comment'
 const showContentForm = ref(false);
+const editingContentId = ref(null);
 const showUsedPartForm = ref(false);
 const showCostForm = ref(false);
 const costFormSectionRef = ref(null);
@@ -154,6 +155,32 @@ function removeContentImage(idx) {
     contentForm.images.splice(idx, 1);
 }
 
+/** 編集開始: 既存データを contentForm にセット */
+function startEditContent(c) {
+    editingContentId.value = c.id;
+    contentForm.work_content_tag_ids = (c.work_content_tags ?? []).map((t) => t.id);
+    contentForm.repair_type_ids = (c.repair_types ?? []).map((r) => r.id);
+    contentForm.content = c.content ?? '';
+    contentForm.started_at = toDatetimeLocal(c.started_at);
+    contentForm.ended_at = toDatetimeLocal(c.ended_at);
+    contentForm.images = [];
+}
+
+function cancelEditContent() {
+    editingContentId.value = null;
+    contentForm.reset();
+}
+
+function deleteWorkContent(c) {
+    if (!confirm('この作業内容を削除しますか？')) return;
+    router.delete(route('work.works.work-contents.destroy', [props.work.id, c.id]), { preserveScroll: true });
+}
+
+function deleteWorkAttachment(att) {
+    if (!confirm('この画像を削除しますか？')) return;
+    router.delete(route('work.works.work-attachments.destroy', [props.work.id, att.id]), { preserveScroll: true });
+}
+
 function setEndAndComplete() {
     const endedAt = contentForm.ended_at == null ? '' : String(contentForm.ended_at).trim();
     if (!endedAt) return;
@@ -164,12 +191,14 @@ function setEndAndComplete() {
 }
 
 function submitContent() {
+    const isUpdate = editingContentId.value != null;
     const hasImages = contentForm.images?.length;
     const onSuccess = () => {
+        editingContentId.value = null;
         contentForm.reset();
         showContentForm.value = false;
     };
-    if (hasImages) {
+    if (hasImages || isUpdate) {
         const fd = new FormData();
         (contentForm.work_content_tag_ids || []).forEach((id) => fd.append('work_content_tag_ids[]', id));
         (contentForm.repair_type_ids || []).forEach((id) => fd.append('repair_type_ids[]', id));
@@ -178,17 +207,33 @@ function submitContent() {
         if (contentForm.ended_at) fd.append('ended_at', contentForm.ended_at);
         (contentForm.images || []).forEach((f) => fd.append('images[]', f));
         contentForm.processing = true;
-        router.post(route('work.works.work-contents.store', props.work.id), fd, {
-            forceFormData: true,
-            preserveScroll: true,
-            onFinish: () => { contentForm.processing = false; contentForm.images = []; },
-            onSuccess,
-        });
+        if (isUpdate) {
+            router.put(route('work.works.work-contents.update', [props.work.id, editingContentId.value]), fd, {
+                forceFormData: true,
+                preserveScroll: true,
+                onFinish: () => { contentForm.processing = false; contentForm.images = []; },
+                onSuccess,
+            });
+        } else {
+            router.post(route('work.works.work-contents.store', props.work.id), fd, {
+                forceFormData: true,
+                preserveScroll: true,
+                onFinish: () => { contentForm.processing = false; contentForm.images = []; },
+                onSuccess,
+            });
+        }
     } else {
-        contentForm.post(route('work.works.work-contents.store', props.work.id), {
-            preserveScroll: true,
-            onSuccess,
-        });
+        if (isUpdate) {
+            contentForm.put(route('work.works.work-contents.update', [props.work.id, editingContentId.value]), {
+                preserveScroll: true,
+                onSuccess,
+            });
+        } else {
+            contentForm.post(route('work.works.work-contents.store', props.work.id), {
+                preserveScroll: true,
+                onSuccess,
+            });
+        }
     }
 }
 
@@ -881,87 +926,180 @@ function submitWorkEdit() {
                             <template #item="{ element: c }">
                         <div
                             :key="c.id"
-                            class="py-4 px-4 border-b border-dashed border-slate-300 last:border-b-0"
+                            class="py-4 px-4 border-b border-dashed border-slate-300 last:border-b-0 relative"
                         >
-                            <div class="flex gap-3">
-                                <div class="drag-handle shrink-0 w-6 h-6 flex items-center justify-center rounded cursor-move text-slate-400 hover:text-slate-600 hover:bg-slate-200/80" title="ドラッグで並び替え">
-                                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h2v2H8V6zm0 5h2v2H8v-2zm0 5h2v2H8v-2zm5-10h2v2h-2V6zm0 5h2v2h-2v-2zm0 5h2v2h-2v-2z"/></svg>
+                            <!-- 編集中: オレンジの編集フォーム -->
+                            <form
+                                v-if="editingContentId === c.id"
+                                @submit.prevent="submitContent"
+                                class="p-5 rounded-xl border-2 border-orange-200 bg-orange-50/80 space-y-4 shadow-sm"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-sm font-semibold text-orange-800 flex items-center gap-2">
+                                        <svg class="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                        </svg>
+                                        作業内容を編集
+                                    </h3>
+                                    <button type="button" class="text-slate-500 hover:text-slate-700 text-sm" @click="cancelEditContent">キャンセル</button>
                                 </div>
-                                <div class="shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-slate-300/70 text-slate-600 text-xs font-medium">
-                                    {{ workContentsList.indexOf(c) + 1 }}
+                                <div>
+                                    <InputLabel value="作業タグ" required />
+                                    <div class="mt-1 flex flex-wrap gap-2 p-2 rounded-md border border-orange-200 bg-white min-h-[38px] w-full">
+                                        <label v-for="t in workContentTags" :key="t.id" class="inline-flex items-center gap-1.5 cursor-pointer">
+                                            <input type="checkbox" :value="t.id" v-model="contentForm.work_content_tag_ids" class="rounded border-orange-300 text-orange-600 focus:ring-orange-500" />
+                                            <span class="text-sm">{{ t.name }}</span>
+                                        </label>
+                                    </div>
+                                    <InputError :message="contentForm.errors.work_content_tag_ids" />
                                 </div>
-                                <div class="flex-1 min-w-0">
-                                    <!-- タグ・修理内容（横並び） -->
-                                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mb-2">
-                                        <div class="flex items-center gap-1.5">
-                                            <span class="text-xs text-slate-500">タグ</span>
-                                            <div class="flex flex-wrap gap-1">
-                                                <Badge v-for="t in (c.work_content_tags || [])" :key="t.id" :label="t.name" :color="t.color" />
-                                                <span v-if="!(c.work_content_tags?.length)" class="text-slate-400 text-xs">—</span>
-                                            </div>
-                                        </div>
-                                        <!-- 修理内容：非表示（カラムは残す） -->
-                                        <div class="hidden">
-                                            <span class="text-xs text-slate-500">修理内容</span>
-                                            <div class="flex flex-wrap gap-1">
-                                                <Badge v-for="r in (c.repair_types || [])" :key="r.id" :label="r.name" :color="r.color" />
-                                                <span v-if="!(c.repair_types?.length)" class="text-slate-400 text-xs">—</span>
-                                            </div>
-                                        </div>
+                                <div class="hidden">
+                                    <InputLabel value="修理内容" />
+                                    <div class="mt-1 flex flex-wrap gap-2 p-2 rounded-md border border-orange-200 bg-white min-h-[38px] w-full">
+                                        <label v-for="r in repairTypes" :key="r.id" class="inline-flex items-center gap-1.5 cursor-pointer">
+                                            <input type="checkbox" :value="r.id" v-model="contentForm.repair_type_ids" class="rounded border-orange-300 text-orange-600 focus:ring-orange-500" />
+                                            <span class="text-sm">{{ r.name }}</span>
+                                        </label>
                                     </div>
-                                    <!-- 開始日時・終了日時 -->
-                                    <div v-if="c.started_at || c.ended_at" class="flex flex-wrap gap-x-6 gap-y-1 px-2.5 py-1.5 rounded bg-slate-100/80 text-xs text-slate-600 mb-2">
-                                        <span v-if="c.started_at" class="flex items-center gap-1.5">
-                                            <span class="text-slate-400 font-medium">開始日時</span>
-                                            <span>{{ formatDateTime(c.started_at) }}</span>
-                                        </span>
-                                        <span v-if="c.ended_at" class="flex items-center gap-1.5">
-                                            <span class="text-slate-400 font-medium">終了日時</span>
-                                            <span>{{ formatDateTime(c.ended_at) }}</span>
-                                        </span>
-                                    </div>
-                                    <!-- 本文 -->
-                                    <p class="text-slate-800 whitespace-pre-wrap text-sm leading-relaxed mb-2">{{ c.content || '（内容なし）' }}</p>
-                                    <!-- 添付画像 -->
-                                    <div v-if="c.work_attachments?.length" class="flex flex-wrap gap-2 mb-2">
-                                        <a
-                                            v-for="att in c.work_attachments"
-                                            :key="att.id"
-                                            :href="att.url"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            class="group block"
-                                        >
+                                </div>
+                                <div>
+                                    <InputLabel value="内容" required />
+                                    <textarea v-model="contentForm.content" rows="3" class="mt-1 block w-full rounded-md border-orange-200 shadow-sm focus:border-orange-500 focus:ring-orange-500" required placeholder="作業内容を入力してください" />
+                                    <InputError :message="contentForm.errors.content" />
+                                </div>
+                                <div>
+                                    <InputLabel value="登録済み画像" />
+                                    <div v-if="c.work_attachments?.length" class="mt-2 flex flex-wrap gap-2">
+                                        <div v-for="att in c.work_attachments" :key="att.id" class="relative inline-block">
                                             <img
                                                 v-if="att.url && /\.(jpe?g|png|gif|webp)$/i.test(att.original_name || '')"
                                                 :src="att.url"
                                                 :alt="att.original_name || '画像'"
-                                                class="h-20 w-20 object-cover rounded border border-slate-200 group-hover:border-indigo-400 transition-colors"
+                                                class="h-20 w-20 object-cover rounded-lg border-2 border-orange-200"
                                             />
-                                            <span
-                                                v-else
-                                                class="inline-flex items-center gap-1.5 px-2 py-1.5 rounded border border-slate-200 text-slate-600 text-xs hover:border-indigo-300"
-                                            >
-                                                <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                </svg>
-                                                {{ att.original_name || '添付' }}
-                                            </span>
-                                        </a>
+                                            <span v-else class="inline-flex items-center gap-1.5 px-2 py-1.5 rounded border border-orange-200 text-slate-600 text-xs h-20 w-20 flex items-center justify-center">{{ att.original_name || '添付' }}</span>
+                                            <button type="button" class="absolute -top-1 -right-1 w-6 h-6 bg-red-500 text-white rounded-full text-sm leading-none flex items-center justify-center hover:bg-red-600" title="画像を削除" @click="deleteWorkAttachment(att)">×</button>
+                                        </div>
                                     </div>
-                                    <!-- 作成日時・更新日時（下に表示） -->
-                                    <div v-if="c.created_at || c.updated_at" class="flex flex-wrap gap-x-5 gap-y-1 pt-2 mt-2 border-t border-slate-200/80 text-xs text-slate-500">
-                                        <span v-if="c.created_at" class="flex items-center gap-1.5">
-                                            <span class="text-slate-400">作成日時</span>
-                                            <span>{{ formatDateTime(c.created_at) }}</span>
-                                        </span>
-                                        <span v-if="c.updated_at" class="flex items-center gap-1.5">
-                                            <span class="text-slate-400">更新日時</span>
-                                            <span>{{ formatDateTime(c.updated_at) }}</span>
-                                        </span>
+                                    <p v-else class="text-slate-500 text-xs mt-1">登録済み画像なし</p>
+                                </div>
+                                <div>
+                                    <InputLabel value="新規画像を追加" />
+                                    <input type="file" accept="image/*" multiple class="mt-1 block w-full text-sm text-slate-600 file:mr-2 file:rounded-md file:border-0 file:bg-orange-600 file:px-4 file:py-2 file:text-white file:text-sm file:font-medium hover:file:bg-orange-700" @change="setContentImages" />
+                                    <div v-if="contentForm.images?.length" class="mt-2 flex flex-wrap gap-2">
+                                        <div v-for="(img, imgIdx) in contentForm.images" :key="imgIdx" class="relative inline-block">
+                                            <img v-if="isFile(img)" :src="getObjectUrl(img)" alt="プレビュー" class="h-16 w-16 object-cover rounded-lg border-2 border-orange-200" />
+                                            <button type="button" class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs leading-none flex items-center justify-center hover:bg-red-600" @click="removeContentImage(imgIdx)">×</button>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div>
+                                        <InputLabel value="開始日時" />
+                                        <TextInput v-model="contentForm.started_at" type="datetime-local" class="mt-1 block w-full rounded-md border-orange-200" />
+                                    </div>
+                                    <div>
+                                        <InputLabel value="終了日時" />
+                                        <TextInput v-model="contentForm.ended_at" type="datetime-local" class="mt-1 block w-full rounded-md border-orange-200" />
+                                    </div>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button type="button" class="text-slate-600 hover:text-slate-800 text-sm" @click="cancelEditContent">キャンセル</button>
+                                    <PrimaryButton type="submit" :disabled="contentForm.processing" class="!bg-orange-600 hover:!bg-orange-700 focus:!ring-orange-500">
+                                        {{ contentForm.processing ? '保存中...' : '保存' }}
+                                    </PrimaryButton>
+                                </div>
+                            </form>
+                            <!-- 表示モード: ブロック + 右上に編集・削除 -->
+                            <template v-else>
+                                <div class="absolute top-2 right-2 flex gap-1 z-10">
+                                    <button type="button" class="p-1.5 rounded text-slate-500 hover:text-orange-600 hover:bg-orange-50" title="編集" @click="startEditContent(c)">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                    </button>
+                                    <button type="button" class="p-1.5 rounded text-slate-500 hover:text-red-600 hover:bg-red-50" title="削除" @click="deleteWorkContent(c)">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    </button>
+                                </div>
+                                <div class="flex gap-3">
+                                    <div class="drag-handle shrink-0 w-6 h-6 flex items-center justify-center rounded cursor-move text-slate-400 hover:text-slate-600 hover:bg-slate-200/80" title="ドラッグで並び替え">
+                                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h2v2H8V6zm0 5h2v2H8v-2zm0 5h2v2H8v-2zm5-10h2v2h-2V6zm0 5h2v2h-2v-2zm0 5h2v2h-2v-2z"/></svg>
+                                    </div>
+                                    <div class="shrink-0 w-6 h-6 flex items-center justify-center rounded-full bg-slate-300/70 text-slate-600 text-xs font-medium">
+                                        {{ workContentsList.indexOf(c) + 1 }}
+                                    </div>
+                                    <div class="flex-1 min-w-0 pr-16">
+                                        <!-- タグ・修理内容（横並び） -->
+                                        <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 mb-2">
+                                            <div class="flex items-center gap-1.5">
+                                                <span class="text-xs text-slate-500">タグ</span>
+                                                <div class="flex flex-wrap gap-1">
+                                                    <Badge v-for="t in (c.work_content_tags || [])" :key="t.id" :label="t.name" :color="t.color" />
+                                                    <span v-if="!(c.work_content_tags?.length)" class="text-slate-400 text-xs">—</span>
+                                                </div>
+                                            </div>
+                                            <div class="hidden">
+                                                <span class="text-xs text-slate-500">修理内容</span>
+                                                <div class="flex flex-wrap gap-1">
+                                                    <Badge v-for="r in (c.repair_types || [])" :key="r.id" :label="r.name" :color="r.color" />
+                                                    <span v-if="!(c.repair_types?.length)" class="text-slate-400 text-xs">—</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <!-- 開始日時・終了日時 -->
+                                        <div v-if="c.started_at || c.ended_at" class="flex flex-wrap gap-x-6 gap-y-1 px-2.5 py-1.5 rounded bg-slate-100/80 text-xs text-slate-600 mb-2">
+                                            <span v-if="c.started_at" class="flex items-center gap-1.5">
+                                                <span class="text-slate-400 font-medium">開始日時</span>
+                                                <span>{{ formatDateTime(c.started_at) }}</span>
+                                            </span>
+                                            <span v-if="c.ended_at" class="flex items-center gap-1.5">
+                                                <span class="text-slate-400 font-medium">終了日時</span>
+                                                <span>{{ formatDateTime(c.ended_at) }}</span>
+                                            </span>
+                                        </div>
+                                        <!-- 本文 -->
+                                        <p class="text-slate-800 whitespace-pre-wrap text-sm leading-relaxed mb-2">{{ c.content || '（内容なし）' }}</p>
+                                        <!-- 添付画像（表示時も画像右上に削除可にする場合はここに削除ボタン追加可能。計画では編集フォーム内のみ） -->
+                                        <div v-if="c.work_attachments?.length" class="flex flex-wrap gap-2 mb-2">
+                                            <a
+                                                v-for="att in c.work_attachments"
+                                                :key="att.id"
+                                                :href="att.url"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                class="group relative inline-block"
+                                            >
+                                                <img
+                                                    v-if="att.url && /\.(jpe?g|png|gif|webp)$/i.test(att.original_name || '')"
+                                                    :src="att.url"
+                                                    :alt="att.original_name || '画像'"
+                                                    class="h-20 w-20 object-cover rounded border border-slate-200 group-hover:border-indigo-400 transition-colors"
+                                                />
+                                                <span
+                                                    v-else
+                                                    class="inline-flex items-center gap-1.5 px-2 py-1.5 rounded border border-slate-200 text-slate-600 text-xs hover:border-indigo-300"
+                                                >
+                                                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                    </svg>
+                                                    {{ att.original_name || '添付' }}
+                                                </span>
+                                                <button type="button" class="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white rounded-full text-xs leading-none flex items-center justify-center hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-opacity" title="画像を削除" @click.prevent="deleteWorkAttachment(att)">×</button>
+                                            </a>
+                                        </div>
+                                        <!-- 作成日時・更新日時 -->
+                                        <div v-if="c.created_at || c.updated_at" class="flex flex-wrap gap-x-5 gap-y-1 pt-2 mt-2 border-t border-slate-200/80 text-xs text-slate-500">
+                                            <span v-if="c.created_at" class="flex items-center gap-1.5">
+                                                <span class="text-slate-400">作成日時</span>
+                                                <span>{{ formatDateTime(c.created_at) }}</span>
+                                            </span>
+                                            <span v-if="c.updated_at" class="flex items-center gap-1.5">
+                                                <span class="text-slate-400">更新日時</span>
+                                                <span>{{ formatDateTime(c.updated_at) }}</span>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
                         </div>
                             </template>
                         </draggable>
