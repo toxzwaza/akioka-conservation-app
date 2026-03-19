@@ -2,11 +2,15 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
+import Modal from '@/Components/Modal.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
+const showImageCommentModal = ref(false);
+const pendingContentIndex = ref(null);
+const pendingImageItems = ref([]);
 import axios from 'axios';
 
 const props = defineProps({
@@ -30,6 +34,7 @@ const emptyWorkContent = () => ({
     started_at: '',
     ended_at: '',
     _images: [],
+    _imageComments: [],
 });
 
 const emptyWorkCost = () => ({
@@ -225,15 +230,51 @@ function onVendorInput(row) {
 function setContentImages(contentIndex, event) {
     const files = event.target.files;
     if (!files?.length || !form.work_contents[contentIndex]) return;
-    const current = form.work_contents[contentIndex]._images || [];
-    form.work_contents[contentIndex]._images = [...current, ...Array.from(files)];
+    const fileList = Array.from(files);
+    pendingContentIndex.value = contentIndex;
+    pendingImageItems.value = fileList.map((file) => ({
+        file,
+        url: typeof URL !== 'undefined' && file instanceof File ? URL.createObjectURL(file) : '',
+        comment: '',
+    }));
+    showImageCommentModal.value = true;
     event.target.value = '';
 }
 
+function closeImageCommentModal() {
+    pendingImageItems.value.forEach((item) => {
+        if (item.url && typeof URL !== 'undefined') URL.revokeObjectURL(item.url);
+    });
+    pendingImageItems.value = [];
+    pendingContentIndex.value = null;
+    showImageCommentModal.value = false;
+}
+
+function confirmImageCommentModal() {
+    const contentIndex = pendingContentIndex.value;
+    const items = pendingImageItems.value;
+    if (contentIndex == null || !form.work_contents[contentIndex]) {
+        closeImageCommentModal();
+        return;
+    }
+    items.forEach((item) => {
+        if (item.url && typeof URL !== 'undefined') URL.revokeObjectURL(item.url);
+    });
+    const row = form.work_contents[contentIndex];
+    row._images = [...(row._images || []), ...items.map((x) => x.file)];
+    row._imageComments = [...(row._imageComments || []), ...items.map((x) => x.comment || '')];
+    pendingImageItems.value = [];
+    pendingContentIndex.value = null;
+    showImageCommentModal.value = false;
+}
+
 function removeContentImage(contentIndex, imageIndex) {
-    const imgs = form.work_contents[contentIndex]?._images || [];
+    const row = form.work_contents[contentIndex];
+    if (!row) return;
+    const imgs = row._images || [];
     imgs.splice(imageIndex, 1);
-    form.work_contents[contentIndex]._images = [...imgs];
+    row._images = [...imgs];
+    if (Array.isArray(row._imageComments)) row._imageComments.splice(imageIndex, 1);
 }
 
 function isFile(obj) {
@@ -250,7 +291,7 @@ function buildFormData() {
     // work_contents は form を直接参照（data() は File を含まないため）
     const workContents = form.work_contents || [];
     workContents.forEach((row, i) => {
-        const { _images, work_content_tag_ids, repair_type_ids, ...rest } = row;
+        const { _images, _imageComments, work_content_tag_ids, repair_type_ids, ...rest } = row;
         Object.entries(rest).forEach(([k, v]) => {
             if (v != null && v !== '') fd.append(`work_contents[${i}][${k}]`, String(v));
         });
@@ -260,8 +301,9 @@ function buildFormData() {
         (repair_type_ids || []).forEach((id) => {
             if (id != null && id !== '') fd.append(`work_contents[${i}][repair_type_ids][]`, String(id));
         });
-        (row._images || []).forEach((file) => {
+        (row._images || []).forEach((file, imgIdx) => {
             if (file instanceof File) fd.append(`work_contents[${i}][images][]`, file);
+            fd.append(`work_contents[${i}][image_comments][]`, (row._imageComments && row._imageComments[imgIdx] != null) ? String(row._imageComments[imgIdx]) : '');
         });
     });
     for (const [key, value] of Object.entries(data)) {
@@ -570,24 +612,37 @@ function submit() {
                                         <div
                                             v-for="(img, imgIdx) in row._images"
                                             :key="imgIdx"
-                                            class="relative inline-block"
+                                            class="group/img relative inline-block"
                                         >
                                             <img
                                                 v-if="isFile(img)"
                                                 :src="getObjectUrl(img)"
                                                 alt="プレビュー"
-                                                class="h-20 w-20 object-cover rounded border border-slate-200"
+                                                class="h-20 w-20 object-cover rounded border border-slate-200 group-hover/img:border-indigo-400 transition-colors"
                                             />
+                                            <span
+                                                v-if="(row._imageComments && row._imageComments[imgIdx])"
+                                                class="absolute top-0 right-0 w-4 h-4 bg-indigo-600 text-white rounded-bl flex items-center justify-center"
+                                                title="コメントあり"
+                                            >
+                                                <svg class="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7z" clip-rule="evenodd" /></svg>
+                                            </span>
+                                            <div
+                                                v-if="row._imageComments && row._imageComments[imgIdx]"
+                                                class="absolute bottom-full left-0 mb-1 z-20 px-3 py-2 bg-slate-800 text-white text-sm rounded-lg shadow-lg min-w-[200px] max-w-[360px] w-max whitespace-pre-wrap break-words opacity-0 pointer-events-none group-hover/img:opacity-100 transition-opacity duration-75"
+                                            >
+                                                {{ row._imageComments[imgIdx] }}
+                                            </div>
                                             <button
                                                 type="button"
-                                                class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs leading-none flex items-center justify-center hover:bg-red-600"
+                                                class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs leading-none flex items-center justify-center hover:bg-red-600 z-10"
                                                 @click="removeContentImage(index, imgIdx)"
                                             >
                                                 ×
                                             </button>
                                         </div>
                                     </div>
-                                    <p class="mt-1 text-xs text-slate-500">JPEG, PNG, GIF など（1枚10MBまで）</p>
+                                    <p class="mt-1 text-xs text-slate-500">JPEG, PNG, GIF など（1枚10MBまで）。選択後にコメントを追加できます。</p>
                                     <InputError :message="form.errors[`work_contents.${index}.images`]" />
                                 </div>
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -897,5 +952,26 @@ function submit() {
                 </div>
             </div>
         </div>
+
+        <!-- 画像コメント入力モーダル（ファイル選択後にプレビュー＋コメントを入力） -->
+        <Modal :show="showImageCommentModal" max-width="3xl" @close="closeImageCommentModal">
+            <div class="p-6">
+                <h3 class="text-base font-semibold text-slate-800 mb-2">画像にコメントを追加</h3>
+                <p class="text-slate-600 text-sm mb-5">各画像のコメントを入力できます。空欄でも登録できます。</p>
+                <div class="space-y-6 max-h-[60vh] overflow-y-auto">
+                    <div v-for="(item, idx) in pendingImageItems" :key="idx" class="border border-slate-200 rounded-lg p-4 space-y-3">
+                        <InputLabel :value="`画像 ${idx + 1} のコメント`" />
+                        <textarea v-model="item.comment" rows="3" class="block w-full rounded-md border-slate-300 shadow-sm text-sm" placeholder="コメントを入力（任意）" maxlength="1000" />
+                        <div class="flex justify-center bg-slate-50 rounded-lg p-4">
+                            <img v-if="item.url" :src="item.url" alt="プレビュー" class="max-h-52 object-contain rounded border border-slate-200" />
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 mt-6 pt-5 border-t border-slate-200">
+                    <button type="button" class="text-slate-600 hover:text-slate-800 text-sm" @click="closeImageCommentModal">キャンセル</button>
+                    <PrimaryButton type="button" @click="confirmImageCommentModal">追加する</PrimaryButton>
+                </div>
+            </div>
+        </Modal>
     </AuthenticatedLayout>
 </template>

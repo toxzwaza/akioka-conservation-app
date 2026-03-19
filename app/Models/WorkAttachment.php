@@ -19,6 +19,7 @@ class WorkAttachment extends Model
         'path',
         'original_name',
         'display_name',
+        'comment',
         'uploaded_by',
     ];
 

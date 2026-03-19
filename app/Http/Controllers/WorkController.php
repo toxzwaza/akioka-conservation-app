@@ -650,15 +650,20 @@ class WorkController extends Controller
                 $wc->workContentTags()->sync($tagIds);
                 $wc->repairTypes()->sync($repairIds);
 
-                // 作業内容の添付画像（複数）
+                // 作業内容の添付画像（複数）＋コメント
                 if ($photoTypeId) {
                     $files = $request->file("work_contents.{$index}.images");
                     $files = is_array($files) ? $files : ($files ? [$files] : []);
-                    foreach ($files as $file) {
+                    $imageComments = $request->input("work_contents.{$index}.image_comments", []);
+                    $imageComments = is_array($imageComments) ? $imageComments : [];
+                    foreach ($files as $fi => $file) {
                         if ($file && $file->isValid()) {
                             $dir = 'work_attachments/' . $work->id;
                             $name = Str::uuid() . '_' . $file->getClientOriginalName();
                             $path = $file->storeAs($dir, $name, 'public');
+                            $comment = isset($imageComments[$fi]) && trim((string) $imageComments[$fi]) !== ''
+                                ? Str::limit(trim((string) $imageComments[$fi]), 1000)
+                                : null;
                             WorkAttachment::create([
                                 'work_id' => $work->id,
                                 'work_content_id' => $wc->id,
@@ -666,6 +671,7 @@ class WorkController extends Controller
                                 'path' => $path,
                                 'original_name' => $file->getClientOriginalName(),
                                 'uploaded_by' => auth()->id(),
+                                'comment' => $comment,
                             ]);
                         }
                     }
@@ -946,6 +952,8 @@ class WorkController extends Controller
                 'ended_at' => ['nullable', 'date'],
                 'images' => ['nullable', 'array'],
                 'images.*' => ['nullable', 'file', 'image', 'max:10240'],
+                'image_comments' => ['nullable', 'array'],
+                'image_comments.*' => ['nullable', 'string', 'max:1000'],
             ]);
         } catch (ValidationException $e) {
             $logContext = [
@@ -1000,18 +1008,22 @@ class WorkController extends Controller
         $photoType = AttachmentType::where('name', '写真')->first();
         if ($photoType) {
             $files = $request->file('images') ?? [];
+            $imageComments = $request->input('image_comments', []);
+            $imageComments = is_array($imageComments) ? $imageComments : [];
             foreach (is_array($files) ? $files : [] as $index => $file) {
                 if ($file) {
                     if ($file->isValid()) {
                         $dir = 'work_attachments/' . $work->id;
                         $name = Str::uuid() . '_' . $file->getClientOriginalName();
                         $path = $file->storeAs($dir, $name, 'public');
+                        $comment = isset($imageComments[$index]) && $imageComments[$index] !== '' ? $imageComments[$index] : null;
                         WorkAttachment::create([
                             'work_id' => $work->id,
                             'work_content_id' => $wc->id,
                             'attachment_type_id' => $photoType->id,
                             'path' => $path,
                             'original_name' => $file->getClientOriginalName(),
+                            'comment' => $comment,
                             'uploaded_by' => auth()->id(),
                         ]);
                     } else {
@@ -1051,6 +1063,8 @@ class WorkController extends Controller
                 'ended_at' => ['nullable', 'date'],
                 'images' => ['nullable', 'array'],
                 'images.*' => ['nullable', 'file', 'image', 'max:10240'],
+                'image_comments' => ['nullable', 'array'],
+                'image_comments.*' => ['nullable', 'string', 'max:1000'],
             ]);
         } catch (ValidationException $e) {
             Log::warning('作業内容更新 バリデーションエラー', [
@@ -1078,17 +1092,21 @@ class WorkController extends Controller
         $photoType = AttachmentType::where('name', '写真')->first();
         if ($photoType) {
             $files = $request->file('images') ?? [];
-            foreach (is_array($files) ? $files : [] as $file) {
+            $imageComments = $request->input('image_comments', []);
+            $imageComments = is_array($imageComments) ? $imageComments : [];
+            foreach (is_array($files) ? $files : [] as $index => $file) {
                 if ($file && $file->isValid()) {
                     $dir = 'work_attachments/' . $work->id;
                     $name = Str::uuid() . '_' . $file->getClientOriginalName();
                     $path = $file->storeAs($dir, $name, 'public');
+                    $comment = isset($imageComments[$index]) && $imageComments[$index] !== '' ? $imageComments[$index] : null;
                     WorkAttachment::create([
                         'work_id' => $work->id,
                         'work_content_id' => $workContent->id,
                         'attachment_type_id' => $photoType->id,
                         'path' => $path,
                         'original_name' => $file->getClientOriginalName(),
+                        'comment' => $comment,
                         'uploaded_by' => auth()->id(),
                     ]);
                 }
@@ -1137,6 +1155,27 @@ class WorkController extends Controller
 
         $this->recordWorkActivity($work, 'その他', '添付画像を削除しました。');
         return redirect()->route('work.works.show', $work)->with('status', '画像を削除しました。');
+    }
+
+    /**
+     * 作業添付（画像コメントなど）を1件更新
+     */
+    public function updateWorkAttachment(Request $request, Work $work, WorkAttachment $workAttachment)
+    {
+        if ((int) $workAttachment->work_id !== (int) $work->id) {
+            abort(404);
+        }
+
+        $validated = $request->validate([
+            'comment' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $workAttachment->update([
+            'comment' => isset($validated['comment']) && $validated['comment'] !== '' ? $validated['comment'] : null,
+        ]);
+
+        $this->recordWorkActivity($work, 'その他', '画像のコメントを更新しました。');
+        return redirect()->route('work.works.show', $work)->with('status', 'コメントを更新しました。');
     }
 
     /**
@@ -1240,6 +1279,29 @@ class WorkController extends Controller
         WorkCost::create($validated);
         $this->recordWorkActivity($work, 'その他', '費用を追加しました。');
         return redirect()->route('work.works.show', $work)->with('status', '費用を追加しました。');
+    }
+
+    /**
+     * 費用に添付したファイルをダウンロード
+     */
+    public function downloadWorkCostFile(Work $work, WorkCost $workCost)
+    {
+        if ((int) $workCost->work_id !== (int) $work->id) {
+            abort(404);
+        }
+        if (! $workCost->file_path) {
+            abort(404);
+        }
+        $fullPath = Storage::disk('local')->path($workCost->file_path);
+        if (! is_file($fullPath)) {
+            abort(404);
+        }
+        $basename = basename($workCost->file_path);
+        $downloadName = preg_match('/^[^_]+_(.+)$/', $basename, $m) ? $m[1] : $basename;
+
+        return response()->file($fullPath, [
+            'Content-Disposition' => 'inline; filename="' . str_replace('"', '\\"', $downloadName) . '"',
+        ]);
     }
 
     /**

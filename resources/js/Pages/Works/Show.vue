@@ -6,6 +6,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
+import Modal from '@/Components/Modal.vue';
 import draggable from 'vuedraggable';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import { ref, computed, watch, nextTick } from 'vue';
@@ -37,6 +38,13 @@ const showUsedPartForm = ref(false);
 const showCostForm = ref(false);
 const costFormSectionRef = ref(null);
 const showSummaryDocForm = ref(false);
+const showImageCommentModal = ref(false);
+/** モーダル用: { file, comment, url } の配列。url は閉じるときに revoke する */
+const pendingImageItems = ref([]);
+/** 登録済み画像のコメント編集モーダル */
+const showEditCommentModal = ref(false);
+const editingAttachment = ref(null);
+const editingCommentText = ref('');
 
 const historyActivities = computed(() =>
     (props.work?.work_activities ?? []).filter((a) => a.work_activity_type?.name !== 'コメント')
@@ -76,6 +84,7 @@ const contentForm = useForm({
     started_at: '',
     ended_at: '',
     images: [],
+    imageComments: [],
 });
 
 const usedPartForm = useForm({
@@ -147,12 +156,59 @@ function getObjectUrl(file) {
 function setContentImages(e) {
     const files = e.target.files;
     if (!files?.length) return;
-    contentForm.images = [...(contentForm.images || []), ...Array.from(files)];
+    const fileList = Array.from(files);
+    pendingImageItems.value = fileList.map((file) => ({
+        file,
+        comment: '',
+        url: getObjectUrl(file),
+    }));
+    showImageCommentModal.value = true;
     e.target.value = '';
+}
+
+function closeImageCommentModal() {
+    pendingImageItems.value.forEach((item) => {
+        if (item.url && typeof URL !== 'undefined') URL.revokeObjectURL(item.url);
+    });
+    pendingImageItems.value = [];
+    showImageCommentModal.value = false;
+}
+
+function confirmImageCommentModal() {
+    const items = pendingImageItems.value;
+    items.forEach((item) => {
+        if (item.url && typeof URL !== 'undefined') URL.revokeObjectURL(item.url);
+    });
+    contentForm.images = [...(contentForm.images || []), ...items.map((x) => x.file)];
+    contentForm.imageComments = [...(contentForm.imageComments || []), ...items.map((x) => x.comment || '')];
+    pendingImageItems.value = [];
+    showImageCommentModal.value = false;
+}
+
+function openEditCommentModal(att) {
+    editingAttachment.value = att;
+    editingCommentText.value = att.comment ?? '';
+    showEditCommentModal.value = true;
+}
+
+function closeEditCommentModal() {
+    editingAttachment.value = null;
+    editingCommentText.value = '';
+    showEditCommentModal.value = false;
+}
+
+function saveEditCommentModal() {
+    if (!editingAttachment.value) return;
+    router.put(
+        route('work.works.work-attachments.update', [props.work.id, editingAttachment.value.id]),
+        { comment: editingCommentText.value },
+        { preserveScroll: true, onSuccess: closeEditCommentModal }
+    );
 }
 
 function removeContentImage(idx) {
     contentForm.images.splice(idx, 1);
+    if (Array.isArray(contentForm.imageComments)) contentForm.imageComments.splice(idx, 1);
 }
 
 /** 編集開始: 既存データを contentForm にセット */
@@ -164,6 +220,7 @@ function startEditContent(c) {
     contentForm.started_at = toDatetimeLocal(c.started_at);
     contentForm.ended_at = toDatetimeLocal(c.ended_at);
     contentForm.images = [];
+    contentForm.imageComments = [];
 }
 
 function cancelEditContent() {
@@ -208,20 +265,23 @@ function submitContent() {
         fd.append('content', contentForm.content);
         if (contentForm.started_at) fd.append('started_at', contentForm.started_at);
         if (contentForm.ended_at) fd.append('ended_at', contentForm.ended_at);
-        (contentForm.images || []).forEach((f) => fd.append('images[]', f));
+        (contentForm.images || []).forEach((f, i) => {
+            fd.append('images[]', f);
+            fd.append('image_comments[]', contentForm.imageComments?.[i] ?? '');
+        });
         contentForm.processing = true;
         if (isUpdate) {
             router.post(route('work.works.work-contents.update', [props.work.id, editingContentId.value]), fd, {
                 forceFormData: true,
                 preserveScroll: true,
-                onFinish: () => { contentForm.processing = false; contentForm.images = []; },
+                onFinish: () => { contentForm.processing = false; contentForm.images = []; contentForm.imageComments = []; },
                 onSuccess,
             });
         } else {
             router.post(route('work.works.work-contents.store', props.work.id), fd, {
                 forceFormData: true,
                 preserveScroll: true,
-                onFinish: () => { contentForm.processing = false; contentForm.images = []; },
+                onFinish: () => { contentForm.processing = false; contentForm.images = []; contentForm.imageComments = []; },
                 onSuccess,
             });
         }
@@ -971,17 +1031,33 @@ function submitWorkEdit() {
                                     <InputError :message="contentForm.errors.content" />
                                 </div>
                                 <div>
-                                    <InputLabel value="登録済み画像" />
+                                    <InputLabel value="登録済み画像（クリックでコメント編集・編集時のみ削除可）" />
                                     <div v-if="c.work_attachments?.length" class="mt-2 flex flex-wrap gap-2">
-                                        <div v-for="att in c.work_attachments" :key="att.id" class="relative inline-block">
-                                            <img
-                                                v-if="att.url && /\.(jpe?g|png|gif|webp)$/i.test(att.original_name || '')"
-                                                :src="att.url"
-                                                :alt="att.original_name || '画像'"
-                                                class="h-20 w-20 object-cover rounded-lg border-2 border-orange-200"
-                                            />
-                                            <span v-else class="inline-flex items-center gap-1.5 px-2 py-1.5 rounded border border-orange-200 text-slate-600 text-xs h-20 w-20 flex items-center justify-center">{{ att.original_name || '添付' }}</span>
-                                            <button type="button" class="absolute -top-1 -right-1 w-6 h-6 bg-red-500 text-white rounded-full text-sm leading-none flex items-center justify-center hover:bg-red-600" title="画像を削除" @click="deleteWorkAttachment(att)">×</button>
+                                        <div v-for="att in c.work_attachments" :key="att.id" class="group/att relative inline-block">
+                                            <!-- ホバー時コメント（即表示・読みやすいツールチップ） -->
+                                            <div
+                                                v-if="att.comment"
+                                                class="absolute bottom-full left-0 mb-1 z-20 px-3 py-2 bg-slate-800 text-white text-sm rounded-lg shadow-lg min-w-[200px] max-w-[360px] w-max whitespace-pre-wrap break-words opacity-0 group-hover/att:opacity-100 transition-opacity duration-75"
+                                            >
+                                                {{ att.comment }}
+                                            </div>
+                                            <button
+                                                type="button"
+                                                class="relative block text-left cursor-pointer rounded-lg border-2 border-orange-200 hover:border-orange-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-1"
+                                                @click="openEditCommentModal(att)"
+                                            >
+                                                <img
+                                                    v-if="att.url && /\.(jpe?g|png|gif|webp)$/i.test(att.original_name || '')"
+                                                    :src="att.url"
+                                                    :alt="att.original_name || '画像'"
+                                                    class="h-20 w-20 object-cover rounded-md"
+                                                />
+                                                <span v-else class="inline-flex items-center gap-1.5 px-2 py-1.5 rounded text-slate-600 text-xs h-20 w-20 flex items-center justify-center">{{ att.original_name || '添付' }}</span>
+                                                <span v-if="att.comment" class="absolute top-0 right-0 w-5 h-5 bg-slate-600/80 text-white rounded-full flex items-center justify-center pointer-events-none" title="コメントあり">
+                                                    <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
+                                                </span>
+                                            </button>
+                                            <button type="button" class="absolute -top-1 -right-1 w-6 h-6 bg-red-500 text-white rounded-full text-sm leading-none flex items-center justify-center hover:bg-red-600 z-10" title="画像を削除" @click.stop="deleteWorkAttachment(att)">×</button>
                                         </div>
                                     </div>
                                     <p v-else class="text-slate-500 text-xs mt-1">登録済み画像なし</p>
@@ -1061,33 +1137,46 @@ function submitWorkEdit() {
                                         </div>
                                         <!-- 本文 -->
                                         <p class="text-slate-800 whitespace-pre-wrap text-sm leading-relaxed mb-2">{{ c.content || '（内容なし）' }}</p>
-                                        <!-- 添付画像（表示時も画像右上に削除可にする場合はここに削除ボタン追加可能。計画では編集フォーム内のみ） -->
+                                        <!-- 添付画像（表示モード: 削除ボタンなし。コメントあり時はアイコン表示・ホバーでコメント表示） -->
                                         <div v-if="c.work_attachments?.length" class="flex flex-wrap gap-2 mb-2">
-                                            <a
+                                            <div
                                                 v-for="att in c.work_attachments"
                                                 :key="att.id"
-                                                :href="att.url"
-                                                target="_blank"
-                                                rel="noopener noreferrer"
                                                 class="group relative inline-block"
                                             >
-                                                <img
-                                                    v-if="att.url && /\.(jpe?g|png|gif|webp)$/i.test(att.original_name || '')"
-                                                    :src="att.url"
-                                                    :alt="att.original_name || '画像'"
-                                                    class="h-20 w-20 object-cover rounded border border-slate-200 group-hover:border-indigo-400 transition-colors"
-                                                />
-                                                <span
-                                                    v-else
-                                                    class="inline-flex items-center gap-1.5 px-2 py-1.5 rounded border border-slate-200 text-slate-600 text-xs hover:border-indigo-300"
+                                                <!-- ホバー時コメント（即表示・読みやすいツールチップ） -->
+                                                <div
+                                                    v-if="att.comment"
+                                                    class="absolute bottom-full left-0 mb-1 z-20 px-3 py-2 bg-slate-800 text-white text-sm rounded-lg shadow-lg min-w-[200px] max-w-[360px] w-max whitespace-pre-wrap break-words opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-75"
                                                 >
-                                                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                    </svg>
-                                                    {{ att.original_name || '添付' }}
-                                                </span>
-                                                <button type="button" class="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white rounded-full text-xs leading-none flex items-center justify-center hover:bg-red-600 opacity-0 group-hover:opacity-100 transition-opacity" title="画像を削除" @click.prevent="deleteWorkAttachment(att)">×</button>
-                                            </a>
+                                                    {{ att.comment }}
+                                                </div>
+                                                <a
+                                                    :href="att.url"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    class="block relative"
+                                                >
+                                                    <img
+                                                        v-if="att.url && /\.(jpe?g|png|gif|webp)$/i.test(att.original_name || '')"
+                                                        :src="att.url"
+                                                        :alt="att.original_name || '画像'"
+                                                        class="h-20 w-20 object-cover rounded border border-slate-200 group-hover:border-indigo-400 transition-colors"
+                                                    />
+                                                    <span
+                                                        v-else
+                                                        class="inline-flex items-center gap-1.5 px-2 py-1.5 rounded border border-slate-200 text-slate-600 text-xs hover:border-indigo-300"
+                                                    >
+                                                        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                        </svg>
+                                                        {{ att.original_name || '添付' }}
+                                                    </span>
+                                                    <span v-if="att.comment" class="absolute top-0 right-0 w-5 h-5 bg-slate-600/80 text-white rounded-full flex items-center justify-center" title="コメントあり">
+                                                        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
+                                                    </span>
+                                                </a>
+                                            </div>
                                         </div>
                                         <!-- 作成日時・更新日時 -->
                                         <div v-if="c.created_at || c.updated_at" class="flex flex-wrap gap-x-5 gap-y-1 pt-2 mt-2 border-t border-slate-200/80 text-xs text-slate-500">
@@ -1307,7 +1396,7 @@ function submitWorkEdit() {
 
                     <!-- 登録済み費用 -->
                     <table v-if="work.work_costs?.length" class="min-w-full text-sm">
-                        <thead><tr class="text-left text-slate-500 border-b"><th class="pb-2">カテゴリ</th><th class="pb-2">名称</th><th class="pb-2">金額</th><th class="pb-2">業者</th><th class="pb-2">発生日</th></tr></thead>
+                        <thead><tr class="text-left text-slate-500 border-b"><th class="pb-2">カテゴリ</th><th class="pb-2">名称</th><th class="pb-2">金額</th><th class="pb-2">業者</th><th class="pb-2">発生日</th><th class="pb-2 w-24">添付</th></tr></thead>
                         <tbody class="divide-y divide-slate-100">
                             <tr v-for="c in work.work_costs" :key="c.id">
                                 <td class="py-2"><Badge :label="c.work_cost_category?.name ?? '—'" :color="c.work_cost_category?.color" /></td>
@@ -1315,6 +1404,20 @@ function submitWorkEdit() {
                                 <td class="py-2">{{ Number(c.amount).toLocaleString() }}円</td>
                                 <td class="py-2">{{ c.vendor?.name ?? c.vendor_name ?? '—' }}</td>
                                 <td class="py-2">{{ formatDate(c.occurred_at) }}</td>
+                                <td class="py-2">
+                                    <a
+                                        v-if="c.file_path"
+                                        :href="route('work.works.work-costs.file', [work.id, c.id])"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        class="inline-flex items-center gap-1 text-indigo-600 hover:text-indigo-800 text-xs font-medium"
+                                        title="添付ファイルを開く"
+                                    >
+                                        <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                                        開く
+                                    </a>
+                                    <span v-else class="text-slate-400 text-xs">—</span>
+                                </td>
                             </tr>
                         </tbody>
                     </table>
@@ -1525,5 +1628,49 @@ function submitWorkEdit() {
             </div>
         </div>
 
+        <!-- 画像コメント入力モーダル（ファイル選択後にプレビュー＋コメントを入力） -->
+        <Modal :show="showImageCommentModal" max-width="3xl" @close="closeImageCommentModal">
+            <div class="p-6">
+                <h3 class="text-base font-semibold text-slate-800 mb-2">画像にコメントを追加</h3>
+                <p class="text-slate-600 text-sm mb-5">各画像の上部にコメントを入力できます。空欄でも登録できます。</p>
+                <div class="space-y-6 max-h-[60vh] overflow-y-auto">
+                    <div v-for="(item, idx) in pendingImageItems" :key="idx" class="border border-slate-200 rounded-lg p-4 space-y-3">
+                        <InputLabel :value="`画像 ${idx + 1} のコメント`" />
+                        <textarea v-model="item.comment" rows="3" class="block w-full rounded-md border-slate-300 shadow-sm text-sm" placeholder="コメントを入力（任意）" maxlength="1000" />
+                        <div class="flex justify-center bg-slate-50 rounded-lg p-4">
+                            <img v-if="item.url" :src="item.url" alt="プレビュー" class="max-h-52 object-contain rounded border border-slate-200" />
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 mt-6 pt-5 border-t border-slate-200">
+                    <button type="button" class="text-slate-600 hover:text-slate-800 text-sm" @click="closeImageCommentModal">キャンセル</button>
+                    <PrimaryButton type="button" @click="confirmImageCommentModal">追加する</PrimaryButton>
+                </div>
+            </div>
+        </Modal>
+
+        <!-- 登録済み画像のコメント編集モーダル（編集ブロックで画像クリック時） -->
+        <Modal :show="showEditCommentModal" max-width="3xl" @close="closeEditCommentModal">
+            <div class="p-6">
+                <h3 class="text-base font-semibold text-slate-800 mb-2">画像のコメントを編集</h3>
+                <p class="text-slate-600 text-sm mb-5">コメントを変更して保存できます。</p>
+                <template v-if="editingAttachment">
+                    <div class="space-y-4">
+                        <div>
+                            <InputLabel value="コメント" />
+                            <textarea v-model="editingCommentText" rows="4" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm text-sm" placeholder="コメントを入力（任意）" maxlength="1000" />
+                        </div>
+                        <div class="flex justify-center bg-slate-50 rounded-lg p-5">
+                            <img v-if="editingAttachment.url && /\.(jpe?g|png|gif|webp)$/i.test(editingAttachment.original_name || '')" :src="editingAttachment.url" alt="プレビュー" class="max-h-72 object-contain rounded border border-slate-200" />
+                            <span v-else class="text-slate-500 text-sm">{{ editingAttachment.original_name || '添付' }}</span>
+                        </div>
+                    </div>
+                    <div class="flex justify-end gap-3 mt-6 pt-5 border-t border-slate-200">
+                        <button type="button" class="text-slate-600 hover:text-slate-800 text-sm" @click="closeEditCommentModal">キャンセル</button>
+                        <PrimaryButton type="button" class="!bg-orange-600 hover:!bg-orange-700 focus:!ring-orange-500" @click="saveEditCommentModal">保存</PrimaryButton>
+                    </div>
+                </template>
+            </div>
+        </Modal>
     </AuthenticatedLayout>
 </template>
